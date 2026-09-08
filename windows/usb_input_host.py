@@ -7,8 +7,6 @@ import argparse
 import base64
 import ctypes
 from ctypes import wintypes
-import os
-import shutil
 import socket
 import subprocess
 import sys
@@ -63,10 +61,6 @@ class INPUT(ctypes.Structure):
     _fields_ = [("type", wintypes.DWORD), ("u", INPUT_UNION)]
 
 
-class FILETIME(ctypes.Structure):
-    _fields_ = [("low", wintypes.DWORD), ("high", wintypes.DWORD)]
-
-
 class SYSTEM_POWER_STATUS(ctypes.Structure):
     _fields_ = [
         ("ACLineStatus", ctypes.c_ubyte),
@@ -81,76 +75,12 @@ class SYSTEM_POWER_STATUS(ctypes.Structure):
 user32 = ctypes.windll.user32
 
 
-def _filetime_value(value: FILETIME) -> int:
-    return (value.high << 32) | value.low
-
-
-class CpuSampler:
-    def __init__(self) -> None:
-        self.previous = self._read()
-
-    @staticmethod
-    def _read() -> tuple[int, int]:
-        idle, kernel, user = FILETIME(), FILETIME(), FILETIME()
-        if not ctypes.windll.kernel32.GetSystemTimes(
-            ctypes.byref(idle), ctypes.byref(kernel), ctypes.byref(user)
-        ):
-            return (0, 0)
-        return (_filetime_value(idle), _filetime_value(kernel) + _filetime_value(user))
-
-    def percent(self) -> int:
-        current = self._read()
-        idle_delta = current[0] - self.previous[0]
-        total_delta = current[1] - self.previous[1]
-        self.previous = current
-        if total_delta <= 0:
-            return 0
-        return max(0, min(100, round(100 * (total_delta - idle_delta) / total_delta)))
-
-
-def disk_percent() -> int:
-    root = Path(os.environ.get("SystemDrive", "C:") + "\\")
-    usage = shutil.disk_usage(root)
-    return round(100 * (usage.total - usage.free) / usage.total)
-
-
 def battery_status() -> tuple[int, int]:
     status = SYSTEM_POWER_STATUS()
     if not ctypes.windll.kernel32.GetSystemPowerStatus(ctypes.byref(status)):
         return (-1, 0)
     percent = -1 if status.BatteryLifePercent == 255 else int(status.BatteryLifePercent)
     return (percent, 1 if status.ACLineStatus == 1 else 0)
-
-
-def cpu_temperature() -> int:
-    # Prefer hardware-monitor providers when installed, then try the firmware
-    # thermal-zone value exposed by Windows. Blank output means unavailable.
-    command = r"""
-$values = @()
-foreach ($namespace in @('root/LibreHardwareMonitor','root/OpenHardwareMonitor')) {
-  try {
-    $values += Get-CimInstance -Namespace $namespace -ClassName Sensor -ErrorAction Stop |
-      Where-Object { $_.SensorType -eq 'Temperature' -and $_.Name -match 'CPU|Package|Core' } |
-      Select-Object -ExpandProperty Value
-  } catch {}
-}
-if ($values.Count -eq 0) {
-  try {
-    $values += Get-CimInstance -Namespace root/wmi -ClassName MSAcpi_ThermalZoneTemperature -ErrorAction Stop |
-      ForEach-Object { ($_.CurrentTemperature / 10) - 273.15 }
-  } catch {}
-}
-if ($values.Count -gt 0) { [math]::Round(($values | Measure-Object -Maximum).Maximum) }
-"""
-    try:
-        result = subprocess.run(
-            ["powershell", "-NoProfile", "-NonInteractive", "-Command", command],
-            capture_output=True, text=True, timeout=8,
-            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-        )
-        return round(float(result.stdout.strip())) if result.stdout.strip() else -1
-    except (OSError, subprocess.SubprocessError, ValueError):
-        return -1
 
 
 def set_brightness(delta: int) -> None:
@@ -167,18 +97,11 @@ Invoke-CimMethod -InputObject $method -MethodName WmiSetBrightness -Arguments @{
 
 
 def telemetry_loop(connection: socket.socket, stop: threading.Event) -> None:
-    cpu = CpuSampler()
-    temperature = -1
-    next_temperature = 0.0
-    while not stop.wait(1.25):
+    while not stop.wait(2.0):
         try:
             battery, plugged = battery_status()
-            line = f"STATS {cpu.percent()} {disk_percent()} {temperature} {battery} {plugged}\n"
+            line = f"BATTERY {battery} {plugged}\n"
             connection.sendall(line.encode("ascii"))
-            now = time.monotonic()
-            if now >= next_temperature:
-                temperature = cpu_temperature()
-                next_temperature = now + 15
         except (ConnectionError, OSError):
             return
 
@@ -288,7 +211,7 @@ def main() -> int:
     args = parser.parse_args()
 
     configure_adb(args.adb)
-    print("A05s local input and PC telemetry helper ready. Press Ctrl+C to stop.")
+    print("A05s local input and laptop-battery helper ready. Press Ctrl+C to stop.")
     while True:
         try:
             with socket.create_connection(("127.0.0.1", PORT), timeout=3) as connection:

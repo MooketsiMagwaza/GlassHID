@@ -76,13 +76,16 @@ public class MainActivity extends Activity {
     private TextView systemStatsView;
     private LinearLayout pairedDevices;
     private volatile int mode = MODE_OFF;
-    private volatile String pcStats = "CPU — · D — · T — · B —";
+    private volatile String pcStats = "LAPTOP BAT —";
     private ServerSocket usbServer;
 
     private BluetoothAdapter adapter;
     private BluetoothHidDevice hid;
     private BluetoothDevice hidHost;
     private boolean hidRegistered;
+    private boolean hidBinding;
+    private boolean reconnectScheduled;
+    private boolean destroyed;
     private boolean shiftOn;
     private boolean capsOn;
     private boolean ctrlOn;
@@ -92,6 +95,7 @@ public class MainActivity extends Activity {
     private int mouseButtons;
     private boolean trackpadOnRight;
     private PopupWindow trackpadPopup;
+    private PopupWindow toolsPopup;
     private PopupWindow systemPopup;
     private PopupWindow settingsPopup;
     private final Map<String, TextView> settingValueViews = new HashMap<>();
@@ -143,13 +147,9 @@ public class MainActivity extends Activity {
         trackpadMenu.setOnClickListener(this::showTrackpadPopup);
         top.addView(trackpadMenu, new LinearLayout.LayoutParams(dp(116), dp(54)));
 
-        Button functionMenu = neoButton("F KEYS", YELLOW);
-        functionMenu.setOnClickListener(this::showFunctionPopup);
-        top.addView(functionMenu, new LinearLayout.LayoutParams(dp(82), dp(54)));
-
-        Button systemMenu = neoButton("SYSTEM", BLUE);
-        systemMenu.setOnClickListener(this::showSystemPopup);
-        top.addView(systemMenu, new LinearLayout.LayoutParams(dp(82), dp(54)));
+        Button toolsMenu = neoButton("TOOLS ▾", YELLOW);
+        toolsMenu.setOnClickListener(this::showToolsPopup);
+        top.addView(toolsMenu, new LinearLayout.LayoutParams(dp(96), dp(54)));
 
         Button settingsMenu = neoButton("SET", PAPER);
         settingsMenu.setOnClickListener(this::showSettingsPopup);
@@ -176,11 +176,16 @@ public class MainActivity extends Activity {
         modes.addView(off);
         modes.addView(bluetooth);
         modes.addView(usb);
-        off.setChecked(true);
         modes.setOnCheckedChangeListener((group, checkedId) -> {
             mode = checkedId;
+            getSharedPreferences("controls", MODE_PRIVATE).edit()
+                    .putInt("active_mode", mode).apply();
+            if (mode == MODE_BLUETOOTH) connectPreferredHost();
             updateStatus();
         });
+        if (mode == MODE_BLUETOOTH) bluetooth.setChecked(true);
+        else if (mode == MODE_USB) usb.setChecked(true);
+        else off.setChecked(true);
         top.addView(modes, new LinearLayout.LayoutParams(dp(165), dp(54)));
 
         Button pair = neoButton("PAIR", BLUE);
@@ -216,7 +221,7 @@ public class MainActivity extends Activity {
         addSpecialKey(r3, "Enter", "ENTER", 0x28, 2.05f, YELLOW);
 
         LinearLayout r4 = keyboardRow();
-        addModifierKey(r4, "Shift", "SHIFT", 1.55f);
+        addModifierKey(r4, "Shift", "SHIFT", 1.2f);
         for (String letter : new String[]{"Z","X","C","V","B","N","M"}) addLetterKey(r4, letter);
         addPrintableKey(r4, ",\n<", ",", "<", 1); addPrintableKey(r4, ".\n>", ".", ">", 1);
         addPrintableKey(r4, "/\n?", "/", "?", 1);
@@ -362,6 +367,33 @@ public class MainActivity extends Activity {
         systemPopup.showAsDropDown(anchor, 0, dp(4));
     }
 
+    private void showToolsPopup(View anchor) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(8), dp(8), dp(8), dp(8));
+        card.setBackground(neoBackground(YELLOW));
+
+        Button functions = neoButton("F KEYS + NAV", PAPER);
+        functions.setOnClickListener(v -> {
+            toolsPopup.dismiss();
+            uiHandler.post(() -> showFunctionPopup(anchor));
+        });
+        card.addView(functions, new LinearLayout.LayoutParams(dp(190), dp(52)));
+
+        Button system = neoButton("SYSTEM", BLUE);
+        system.setOnClickListener(v -> {
+            toolsPopup.dismiss();
+            uiHandler.post(() -> showSystemPopup(anchor));
+        });
+        card.addView(system, new LinearLayout.LayoutParams(dp(190), dp(52)));
+
+        toolsPopup = new PopupWindow(card, dp(206), dp(120), true);
+        toolsPopup.setBackgroundDrawable(rounded(Color.TRANSPARENT));
+        toolsPopup.setOutsideTouchable(true);
+        toolsPopup.setElevation(dp(12));
+        toolsPopup.showAsDropDown(anchor, 0, dp(4));
+    }
+
     private void addSystemKey(LinearLayout row, String label, String name, int usage, int color) {
         Button key = neoButton(label, color);
         key.setOnClickListener(v -> sendSystemControl(name, usage));
@@ -370,6 +402,7 @@ public class MainActivity extends Activity {
 
     private void loadSettings() {
         SharedPreferences values = getSharedPreferences("controls", MODE_PRIVATE);
+        mode = values.getInt("active_mode", MODE_OFF);
         dragHoldMs = values.getInt("drag_hold_ms", 500);
         pointerPercent = values.getInt("pointer_percent", 100);
         scrollPercent = values.getInt("scroll_percent", 100);
@@ -573,41 +606,102 @@ public class MainActivity extends Activity {
     }
 
     private void bindHidProfile() {
-        if (adapter == null) {
+        if (destroyed || hidBinding || hid != null || adapter == null) {
             updateStatus();
             return;
         }
-        adapter.getProfileProxy(this, new BluetoothProfile.ServiceListener() {
+        hidBinding = true;
+        boolean requested = adapter.getProfileProxy(this, new BluetoothProfile.ServiceListener() {
             @Override public void onServiceConnected(int profile, BluetoothProfile proxy) {
+                hidBinding = false;
                 hid = (BluetoothHidDevice) proxy;
                 registerHid();
             }
             @Override public void onServiceDisconnected(int profile) {
+                hidBinding = false;
                 hid = null;
                 hidRegistered = false;
                 hidHost = null;
+                Log.w("A05sInput", "Bluetooth HID profile disconnected");
                 updateStatus();
+                scheduleBluetoothReconnect();
             }
         }, BluetoothProfile.HID_DEVICE);
+        if (!requested) {
+            hidBinding = false;
+            Log.w("A05sInput", "Bluetooth HID profile bind was rejected");
+            scheduleBluetoothReconnect();
+        }
     }
 
     private void registerHid() {
         if (hid == null) return;
         BluetoothHidDeviceAppSdpSettings sdp = new BluetoothHidDeviceAppSdpSettings(
                 "A05s Input", "Offline keyboard and mouse", "Local", (byte) 0xC0, HID_DESCRIPTOR);
-        hid.registerApp(sdp, null, null, getMainExecutor(), new BluetoothHidDevice.Callback() {
+        boolean requested = hid.registerApp(sdp, null, null, getMainExecutor(), new BluetoothHidDevice.Callback() {
             @Override public void onAppStatusChanged(BluetoothDevice pluggedDevice, boolean registered) {
                 hidRegistered = registered;
-                if (pluggedDevice != null) hidHost = pluggedDevice;
+                Log.d("A05sInput", "Bluetooth HID app registered=" + registered);
+                if (pluggedDevice != null) {
+                    hidHost = pluggedDevice;
+                    rememberHost(pluggedDevice);
+                }
                 refreshBondedDevices();
                 updateStatus();
+                if (registered && mode == MODE_BLUETOOTH && hidHost == null) {
+                    connectPreferredHost();
+                }
             }
             @Override public void onConnectionStateChanged(BluetoothDevice device, int state) {
-                if (state == BluetoothProfile.STATE_CONNECTED) hidHost = device;
-                if (state == BluetoothProfile.STATE_DISCONNECTED && device.equals(hidHost)) hidHost = null;
+                Log.d("A05sInput", "Bluetooth HID state=" + state + " host=" + safeName(device));
+                if (state == BluetoothProfile.STATE_CONNECTED) {
+                    hidHost = device;
+                    rememberHost(device);
+                    reconnectScheduled = false;
+                }
+                if (state == BluetoothProfile.STATE_DISCONNECTED && device.equals(hidHost)) {
+                    hidHost = null;
+                    scheduleBluetoothReconnect();
+                }
                 updateStatus();
             }
         });
+        if (!requested) Log.w("A05sInput", "Bluetooth HID app registration was rejected");
+    }
+
+    private void rememberHost(BluetoothDevice device) {
+        if (!hasBtPermission() || device == null) return;
+        getSharedPreferences("controls", MODE_PRIVATE).edit()
+                .putString("last_hid_host", device.getAddress()).apply();
+    }
+
+    private void connectPreferredHost() {
+        if (destroyed || mode != MODE_BLUETOOTH || !hasBtPermission() ||
+                adapter == null || hid == null || !hidRegistered || hidHost != null) return;
+        String address = getSharedPreferences("controls", MODE_PRIVATE)
+                .getString("last_hid_host", null);
+        if (address == null) return;
+        try {
+            BluetoothDevice preferred = adapter.getRemoteDevice(address);
+            Log.d("A05sInput", "Connecting preferred HID host " + safeName(preferred));
+            if (!hid.connect(preferred)) {
+                Log.w("A05sInput", "Bluetooth HID connect request was rejected");
+                scheduleBluetoothReconnect();
+            }
+        } catch (IllegalArgumentException e) {
+            Log.w("A05sInput", "Saved Bluetooth host address is invalid", e);
+        }
+    }
+
+    private void scheduleBluetoothReconnect() {
+        if (destroyed || mode != MODE_BLUETOOTH || reconnectScheduled) return;
+        reconnectScheduled = true;
+        uiHandler.postDelayed(() -> {
+            reconnectScheduled = false;
+            if (destroyed || mode != MODE_BLUETOOTH) return;
+            if (hid == null) bindHidProfile();
+            else connectPreferredHost();
+        }, 1200);
     }
 
     private void refreshBondedDevices() {
@@ -619,7 +713,10 @@ public class MainActivity extends Activity {
             for (BluetoothDevice device : devices) {
                 Button connect = button("Connect Bluetooth: " + device.getName());
                 connect.setOnClickListener(v -> {
-                    if (hid != null && hidRegistered) hid.connect(device);
+                    rememberHost(device);
+                    if (hid != null && hidRegistered && !hid.connect(device))
+                        Log.w("A05sInput", "Bluetooth HID connect request was rejected");
+                    updateStatus();
                 });
                 pairedDevices.addView(connect);
             }
@@ -650,24 +747,21 @@ public class MainActivity extends Activity {
             String line;
             while ((line = client.readLine()) != null) handleHostLine(line);
         } catch (IOException e) {
-            Log.d("A05sInput", "PC telemetry disconnected");
+            Log.d("A05sInput", "Laptop battery link disconnected");
         } finally {
             usbClients.remove(client);
             client.close();
-            pcStats = "CPU — · D — · T — · B —";
+            pcStats = "LAPTOP BAT —";
             updateStatus();
         }
     }
 
     private void handleHostLine(String line) {
-        if (!line.startsWith("STATS ")) return;
-        String[] values = line.substring(6).trim().split("\\s+");
-        if (values.length < 5) return;
-        pcStats = "CPU " + metric(values[0], "%") +
-                " · D " + metric(values[1], "%") +
-                " · T " + metric(values[2], "°C") +
-                " · B " + metric(values[3], "%") +
-                ("1".equals(values[4]) ? " ⚡" : "");
+        if (!line.startsWith("BATTERY ")) return;
+        String[] values = line.substring(8).trim().split("\\s+");
+        if (values.length < 2) return;
+        pcStats = "LAPTOP BAT " + metric(values[0], "%") +
+                ("1".equals(values[1]) ? " ⚡" : "");
         updateStatus();
     }
 
@@ -801,13 +895,24 @@ public class MainActivity extends Activity {
         if (modifier != 0 && usage != 0) {
             // Send a real four-stage chord. Some Windows Bluetooth stacks miss a
             // modifier that first appears in the same report as the target key.
-            uiHandler.postAtTime(() -> targetHid.sendReport(targetHost, 1, modifiersDown), start);
-            uiHandler.postAtTime(() -> targetHid.sendReport(targetHost, 1, chordDown), start + 45);
-            uiHandler.postAtTime(() -> targetHid.sendReport(targetHost, 1, modifiersDown), start + 115);
-            uiHandler.postAtTime(() -> targetHid.sendReport(targetHost, 1, allUp), start + 160);
+            uiHandler.postAtTime(() -> sendHidReport(targetHid, targetHost, 1, modifiersDown), start);
+            uiHandler.postAtTime(() -> sendHidReport(targetHid, targetHost, 1, chordDown), start + 45);
+            uiHandler.postAtTime(() -> sendHidReport(targetHid, targetHost, 1, modifiersDown), start + 115);
+            uiHandler.postAtTime(() -> sendHidReport(targetHid, targetHost, 1, allUp), start + 160);
         } else {
-            uiHandler.postAtTime(() -> targetHid.sendReport(targetHost, 1, chordDown), start);
-            uiHandler.postAtTime(() -> targetHid.sendReport(targetHost, 1, allUp), start + 85);
+            uiHandler.postAtTime(() -> sendHidReport(targetHid, targetHost, 1, chordDown), start);
+            uiHandler.postAtTime(() -> sendHidReport(targetHid, targetHost, 1, allUp), start + 85);
+        }
+    }
+
+    private void sendHidReport(BluetoothHidDevice targetHid, BluetoothDevice targetHost,
+                               int reportId, byte[] report) {
+        if (!targetHid.sendReport(targetHost, reportId, report)) {
+            Log.w("A05sInput", "Bluetooth rejected HID report " + reportId);
+            if (targetHost.equals(hidHost)) hidHost = null;
+            targetHid.disconnect(targetHost);
+            updateStatus();
+            scheduleBluetoothReconnect();
         }
     }
 
@@ -834,8 +939,8 @@ public class MainActivity extends Activity {
             nextHidKeyAt = start + 130;
         }
         Log.d("A05sInput", "BT consumer usage=0x" + Integer.toHexString(usage));
-        uiHandler.postAtTime(() -> targetHid.sendReport(targetHost, 3, down), start);
-        uiHandler.postAtTime(() -> targetHid.sendReport(targetHost, 3, up), start + 85);
+        uiHandler.postAtTime(() -> sendHidReport(targetHid, targetHost, 3, down), start);
+        uiHandler.postAtTime(() -> sendHidReport(targetHid, targetHost, 3, up), start + 85);
     }
 
     private void move(int dx, int dy) {
@@ -869,11 +974,12 @@ public class MainActivity extends Activity {
         boolean emptyReport = dx == 0 && dy == 0 && wheel == 0;
         while (dx != 0 || dy != 0 || wheel != 0) {
             int x = clamp(dx), y = clamp(dy), w = clamp(wheel);
-            hid.sendReport(hidHost, 2, new byte[]{(byte) buttons, (byte) x, (byte) y, (byte) w});
+            sendHidReport(hid, hidHost, 2,
+                    new byte[]{(byte) buttons, (byte) x, (byte) y, (byte) w});
             dx -= x; dy -= y; wheel -= w;
         }
         if (emptyReport) {
-            hid.sendReport(hidHost, 2, new byte[]{(byte) buttons, 0, 0, 0});
+            sendHidReport(hid, hidHost, 2, new byte[]{(byte) buttons, 0, 0, 0});
         }
     }
 
@@ -915,6 +1021,7 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        destroyed = true;
         super.onDestroy();
         if (hid != null && hidRegistered) hid.unregisterApp();
         if (adapter != null && hid != null) adapter.closeProfileProxy(BluetoothProfile.HID_DEVICE, hid);
