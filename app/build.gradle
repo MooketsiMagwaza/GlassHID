@@ -1,0 +1,16 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.nido.a05sinput'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.nido.a05sinput'
+        minSdk 28
+        targetSdk 34
+        versionCode 1
+        versionName '1.0'
+    }
+}

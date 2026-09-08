@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Dark offset shadow and mint rounded keyboard face. -->
+    <path
+        android:fillColor="#181818"
+        android:pathData="M35,26 H78 C85,26 90,31 90,38 V77 C90,84 85,89 78,89 H35 C28,89 23,84 23,77 V38 C23,31 28,26 35,26 Z" />
+    <path
+        android:fillColor="#8BD6AA"
+        android:strokeColor="#181818"
+        android:strokeWidth="3"
+        android:pathData="M30,20 H73 C80,20 85,25 85,32 V71 C85,78 80,83 73,83 H30 C23,83 18,78 18,71 V32 C18,25 23,20 30,20 Z" />
+    <!-- Minimal keyboard grid. -->
+    <path android:fillColor="#F7F3EA" android:strokeColor="#181818" android:strokeWidth="2"
+        android:pathData="M29,31 H42 V44 H29 Z M47,31 H60 V44 H47 Z M65,31 H75 V44 H65 Z M29,49 H42 V62 H29 Z M47,49 H60 V62 H47 Z M65,49 H75 V62 H65 Z" />
+    <path android:fillColor="#FAC450" android:strokeColor="#181818" android:strokeWidth="2"
+        android:pathData="M29,67 H75 V76 H29 Z" />
+    <!-- Coral pointer mark. -->
+    <path
+        android:fillColor="#FF7E67"
+        android:strokeColor="#181818"
+        android:strokeWidth="2"
+        android:strokeLineJoin="round"
+        android:pathData="M55,42 L55,66 L62,60 L68,72 L75,68 L69,56 L78,55 Z" />
+</vector>
