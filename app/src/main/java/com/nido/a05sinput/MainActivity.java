@@ -69,6 +69,7 @@ public class MainActivity extends Activity {
     private static final int BLUE = Color.rgb(139, 188, 255);
 
     private final ExecutorService io = Executors.newCachedThreadPool();
+    private final ExecutorService usbWriter = Executors.newSingleThreadExecutor();
     private final Handler uiHandler = new Handler(Looper.getMainLooper());
     private final List<UsbClient> usbClients = new CopyOnWriteArrayList<>();
     private TextView status;
@@ -681,7 +682,7 @@ public class MainActivity extends Activity {
 
     private void broadcast(String line) {
         if (mode != MODE_USB) return;
-        sendToUsbClients(line);
+        usbWriter.execute(() -> sendToUsbClients(line));
     }
 
     private boolean sendToUsbClients(String line) {
@@ -811,10 +812,14 @@ public class MainActivity extends Activity {
     }
 
     private void sendSystemControl(String name, int consumerUsage) {
-        // Prefer the cable helper when available: it also supports laptop-panel
-        // brightness, which Windows does not consistently expose over Bluetooth HID.
-        if (sendToUsbClients("MEDIA " + name)) return;
-        if (mode == MODE_BLUETOOTH) sendBluetoothConsumer(consumerUsage);
+        // Laptop brightness is deliberately cable-only. Windows Bluetooth HID
+        // implementations interpret brightness usages inconsistently, and socket
+        // writes must never block Android's UI thread.
+        if (name.startsWith("BRIGHTNESS") || mode != MODE_BLUETOOTH) {
+            usbWriter.execute(() -> sendToUsbClients("MEDIA " + name));
+        } else {
+            sendBluetoothConsumer(consumerUsage);
+        }
     }
 
     private void sendBluetoothConsumer(int usage) {
@@ -916,6 +921,7 @@ public class MainActivity extends Activity {
         try { if (usbServer != null) usbServer.close(); } catch (IOException ignored) { }
         for (UsbClient client : usbClients) client.close();
         io.shutdownNow();
+        usbWriter.shutdownNow();
     }
 
     private static final class UsbClient {

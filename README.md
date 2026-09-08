@@ -49,6 +49,10 @@ sensor, and laptop battery/charging state. The helper talks only over the ADB
 USB loopback tunnel; the phone still does not use Wi-Fi. It can stay running
 while the app's active input mode is **Bluetooth**.
 
+Brightness is intentionally cable-only for safety and compatibility. System
+commands are written through a background queue, so a stale cable connection
+cannot freeze the Android interface.
+
 The launcher icon uses the same mint, cream, coral, heavy-outline, and offset-
 shadow visual language as the app.
 

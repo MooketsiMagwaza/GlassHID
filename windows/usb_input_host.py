@@ -253,6 +253,7 @@ def handle(line: str, dry_run: bool) -> None:
     elif command == "HOTKEY" and len(parts) == 2:
         send_hotkey(parts[1])
     elif command == "MEDIA" and len(parts) == 2:
+        print(f"System control: {parts[1]}", flush=True)
         if parts[1] == "BRIGHTNESS_DOWN":
             set_brightness(-10)
         elif parts[1] == "BRIGHTNESS_UP":
