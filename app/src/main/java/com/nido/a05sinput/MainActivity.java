@@ -30,6 +30,7 @@ import android.widget.LinearLayout;
 import android.widget.PopupWindow;
 import android.widget.RadioButton;
 import android.widget.RadioGroup;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -90,6 +91,7 @@ public class MainActivity extends Activity implements TrackpadGestureListener.Ho
     private boolean hapticsOn = true;
     private boolean laptopClicksOn = true;
     private boolean controllerLayout;
+    private boolean swapGamepadControls;
     private final List<Button> shiftButtons = new ArrayList<>();
     private final List<Button> capsButtons = new ArrayList<>();
     private final List<Button> ctrlButtons = new ArrayList<>();
@@ -219,11 +221,20 @@ public class MainActivity extends Activity implements TrackpadGestureListener.Ho
 
         controllerTopBar = new LinearLayout(this);
         controllerTopBar.setGravity(Gravity.CENTER);
+        controllerTopBar.setMotionEventSplittingEnabled(true);
+        controllerTopBar.addView(controllerShoulder("L2", 7, BLUE),
+                new LinearLayout.LayoutParams(0, dp(50), 1));
+        controllerTopBar.addView(controllerShoulder("L1", 5, PAPER),
+                new LinearLayout.LayoutParams(0, dp(50), 1));
         Button keys = neoButton("KEYS", BLUE);
         keys.setOnClickListener(v -> showInputLayout(false, true));
         controllerTopBar.addView(keys, new LinearLayout.LayoutParams(dp(140), dp(46)));
+        controllerTopBar.addView(controllerShoulder("R1", 6, PAPER),
+                new LinearLayout.LayoutParams(0, dp(50), 1));
+        controllerTopBar.addView(controllerShoulder("R2", 8, BLUE),
+                new LinearLayout.LayoutParams(0, dp(50), 1));
         root.addView(controllerTopBar, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(50)));
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(54)));
 
         inputContainer = new LinearLayout(this);
         inputContainer.setOrientation(LinearLayout.VERTICAL);
@@ -301,7 +312,7 @@ public class MainActivity extends Activity implements TrackpadGestureListener.Ho
         if (useController) {
             bluetoothModeButton.setChecked(true);
             controllerPanel = new ControllerPanel(this, neoUi, feedback,
-                    this::sendGamepadReport);
+                    this::sendGamepadReport, swapGamepadControls);
             inputContainer.addView(controllerPanel.build(),
                     new LinearLayout.LayoutParams(-1, -1));
             if (announce) Toast.makeText(this,
@@ -312,6 +323,24 @@ public class MainActivity extends Activity implements TrackpadGestureListener.Ho
             if (announce) Toast.makeText(this,
                     "Keyboard layout", Toast.LENGTH_SHORT).show();
         }
+        updateStatus();
+    }
+
+    private Button controllerShoulder(String label, int buttonNumber, int color) {
+        Button button = neoButton(label, color);
+        button.setOnTouchListener((view, event) -> {
+            int action = event.getActionMasked();
+            if (action == MotionEvent.ACTION_DOWN) {
+                feedback.perform(view, HapticFeedbackConstants.KEYBOARD_TAP);
+                if (controllerPanel != null) controllerPanel.setButton(buttonNumber, true);
+                view.animate().scaleX(0.95f).scaleY(0.95f).setDuration(45).start();
+            } else if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+                if (controllerPanel != null) controllerPanel.setButton(buttonNumber, false);
+                view.animate().scaleX(1f).scaleY(1f).setDuration(65).start();
+            }
+            return true;
+        });
+        return button;
     }
 
     private void showTrackpadPopup(View anchor) {
@@ -362,7 +391,7 @@ public class MainActivity extends Activity implements TrackpadGestureListener.Ho
         scrollPad.setTextColor(INK);
         scrollPad.setBackground(rounded(BLUE));
         scrollPad.setOnTouchListener(new ScrollPadListener(this));
-        scrollPad.setOnHoverListener((view, event) -> {
+ scrollPad.setOnHoverListener((view, event) -> {
             if (event.getActionMasked() == MotionEvent.ACTION_HOVER_ENTER) {
                 view.animate().scaleX(1.025f).scaleY(1.015f).setDuration(80).start();
             } else if (event.getActionMasked() == MotionEvent.ACTION_HOVER_EXIT) {
@@ -478,6 +507,7 @@ public class MainActivity extends Activity implements TrackpadGestureListener.Ho
         hapticsOn = values.getBoolean("haptics", true);
         laptopClicksOn = values.getBoolean("laptop_clicks", true);
         controllerLayout = values.getBoolean("controller_layout", false);
+        swapGamepadControls = values.getBoolean("swap_gamepad_controls", false);
     }
 
     private void saveSettings() {
@@ -489,6 +519,7 @@ public class MainActivity extends Activity implements TrackpadGestureListener.Ho
                 .putBoolean("haptics", hapticsOn)
                 .putBoolean("laptop_clicks", laptopClicksOn)
                 .putBoolean("controller_layout", controllerLayout)
+                .putBoolean("swap_gamepad_controls", swapGamepadControls)
                 .apply();
     }
 
@@ -533,7 +564,21 @@ public class MainActivity extends Activity implements TrackpadGestureListener.Ho
         });
         card.addView(laptopClicks, new LinearLayout.LayoutParams(-1, dp(48)));
 
-        settingsPopup = new PopupWindow(card, dp(315), dp(334), true);
+        Button controllerSwap = neoButton("SWAP PAD / STICKS · " +
+                (swapGamepadControls ? "ON" : "OFF"), CORAL);
+        settingValueViews.put("CONTROLLER_SWAP", controllerSwap);
+        controllerSwap.setOnClickListener(v -> {
+            swapGamepadControls = !swapGamepadControls;
+            saveSettings();
+            refreshSettingValues();
+        });
+        card.addView(controllerSwap, new LinearLayout.LayoutParams(-1, dp(48)));
+
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+        scroll.addView(card, new ScrollView.LayoutParams(-1,
+                ScrollView.LayoutParams.WRAP_CONTENT));
+        settingsPopup = new PopupWindow(scroll, dp(315), dp(334), true);
         settingsPopup.setBackgroundDrawable(rounded(Color.TRANSPARENT));
         settingsPopup.setOutsideTouchable(true);
         settingsPopup.setElevation(dp(12));
@@ -600,6 +645,9 @@ public class MainActivity extends Activity implements TrackpadGestureListener.Ho
         if (settingValueViews.containsKey("LAPTOP_CLICKS"))
             settingValueViews.get("LAPTOP_CLICKS").setText("LAPTOP CLICKS · " +
                     (laptopClicksOn ? "ON" : "OFF"));
+        if (settingValueViews.containsKey("CONTROLLER_SWAP"))
+            settingValueViews.get("CONTROLLER_SWAP").setText("SWAP PAD / STICKS · " +
+                    (swapGamepadControls ? "ON" : "OFF"));
     }
 
     private void showFunctionPopup(View anchor) {
@@ -971,6 +1019,12 @@ public class MainActivity extends Activity implements TrackpadGestureListener.Ho
                 detail = "NEXT · " + chord.substring(0, chord.length() - 1);
             }
             status.setText(selected + " · " + connection + "\n" + detail);
+            if (controllerPanel != null) {
+                String controllerConnection = mode == MODE_BLUETOOTH &&
+                        bluetooth.isInputLive() ? "BT · INPUT CONNECTED ✓" :
+                        selected + " · " + connection;
+                controllerPanel.setConnectionStatus(controllerConnection);
+            }
             if (systemStatsView != null) systemStatsView.setText(pcStats);
             updateBluetoothPanel();
         });

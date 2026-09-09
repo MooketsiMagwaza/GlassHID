@@ -1,7 +1,12 @@
-# A05s Input Bridge
+# GlassHID
+
+![GlassHID — your phone is the peripheral](docs/images/project-banner.svg)
 
 A completely local keyboard, mouse, and gamepad for the Samsung Galaxy A05s. The phone
 does not need Wi-Fi, mobile data, an account, or a cloud service.
+
+The current development build retains the **A05s Input** app label, while
+**GlassHID** is the proposed public project name.
 
 The landscape-only interface uses a compact neo-brutalist keyboard. The full
 keyboard occupies the canvas; **TRACKPAD ▾** opens the mouse surface from the
@@ -16,12 +21,16 @@ Trackpad, Tools, Settings, connection, and pairing toolbar to maximize usable
 space. It provides two analog/clickable sticks, an eight-way D-pad, the
 triangle/circle/cross/square cluster, L1/L2/R1/R2, Select, PS, and Start. Button
 combinations and stick-plus-button input can be held simultaneously.
+The persistent **SWAP PAD / STICKS** setting exchanges both outer and inner
+control positions for players who prefer the analog sticks above the D-pad and
+symbol cluster.
 
 Every control has visible input feedback: touch/click depresses the face into
 its dark shadow, hover/focus lifts it, and phone touches produce haptic feedback.
 **TOOLS ▾** keeps the function/navigation keys and System panel in one compact
 drawer. **SET** opens persistent controls for drag-hold delay, pointer speed,
 scroll speed, Backspace/key repeat speed, haptics, and laptop click sounds. The
+controller position toggle lives at the bottom of this scrollable panel. The
 default drag hold is 500 ms. Haptics use the phone vibrator directly, so they do
 not depend on Android's global touch-feedback setting.
 
@@ -34,6 +43,12 @@ scroll pad provides one-finger scrolling with haptic ticks; two-finger scrolling
 on the main pad remains available. Three-finger swipes switch desktops left/right,
 open Task View when swiping up, and show the desktop when swiping down. The
 trackpad card's dock button moves it between the left and right edges.
+
+## Controller layouts
+
+| PS3-style default | Swapped pad/sticks |
+| --- | --- |
+| ![Default controller layout](docs/images/controller-default.png) | ![Swapped controller layout](docs/images/controller-swapped.png) |
 
 ## Bluetooth mode
 
@@ -107,3 +122,15 @@ standard library, so its runtime has no third-party dependencies. The Android
 code is split by responsibility: Bluetooth HID, USB transport, feedback,
 neo-brutalist styling, key mapping, controller layout, trackpad gestures, and the
 scroll strip are separate components; `MainActivity` coordinates the screen.
+
+## Contributing
+
+![Contributions welcome](docs/images/contributions-welcome.svg)
+
+Bug fixes, device reports, layouts, accessibility work, documentation, and
+translations are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening
+a pull request, use the issue templates for reproducible reports, and disclose
+input or pairing vulnerabilities through the process in [SECURITY.md](SECURITY.md).
+
+GlassHID is available under the [MIT License](LICENSE). Community participation
+is governed by [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).

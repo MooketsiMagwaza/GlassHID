@@ -32,6 +32,8 @@ final class ControllerPanel {
     private final NeoUi ui;
     private final FeedbackController feedback;
     private final Listener listener;
+    private final boolean swapControls;
+    private TextView connectionStatus;
 
     private int buttons;
     private int leftX;
@@ -41,11 +43,12 @@ final class ControllerPanel {
     private int hat = HAT_NEUTRAL;
 
     ControllerPanel(Activity activity, NeoUi ui, FeedbackController feedback,
-                    Listener listener) {
+                    Listener listener, boolean swapControls) {
         this.activity = activity;
         this.ui = ui;
         this.feedback = feedback;
         this.listener = listener;
+        this.swapControls = swapControls;
     }
 
     View build() {
@@ -54,31 +57,38 @@ final class ControllerPanel {
         root.setPadding(0, dp(2), 0, 0);
         root.setMotionEventSplittingEnabled(true);
 
-        LinearLayout shoulders = horizontal();
-        shoulders.addView(gameButton("L2", 7, BLUE), weighted(1));
-        shoulders.addView(gameButton("L1", 5, PAPER), weighted(1));
-
+        LinearLayout identity = new LinearLayout(activity);
+        identity.setOrientation(LinearLayout.VERTICAL);
+        identity.setGravity(Gravity.CENTER);
+        connectionStatus = ui.text("BT · STARTING INPUT", 11);
+        connectionStatus.setTypeface(Typeface.DEFAULT_BOLD);
+        connectionStatus.setTextColor(INK);
+        connectionStatus.setGravity(Gravity.CENTER);
+        identity.addView(connectionStatus, new LinearLayout.LayoutParams(-1, 0, 1));
         TextView wordmark = ui.text("A05s  /  GAMEPAD", 13);
         wordmark.setTypeface(Typeface.DEFAULT_BOLD);
         wordmark.setTextColor(INK);
         wordmark.setGravity(Gravity.CENTER);
-        shoulders.addView(wordmark, weighted(2.6f));
-
-        shoulders.addView(gameButton("R1", 6, PAPER), weighted(1));
-        shoulders.addView(gameButton("R2", 8, BLUE), weighted(1));
-        root.addView(shoulders, new LinearLayout.LayoutParams(-1, dp(58)));
+        identity.addView(wordmark, new LinearLayout.LayoutParams(-1, 0, 1));
+        root.addView(identity, new LinearLayout.LayoutParams(-1, dp(48)));
 
         FrameLayout body = new FrameLayout(activity);
         body.setMotionEventSplittingEnabled(true);
         body.setBackground(ui.background(GREEN));
 
         View dpad = dPad();
-        body.addView(dpad, frame(dp(172), dp(172), Gravity.LEFT | Gravity.TOP,
-                dp(14), dp(8), 0, 0));
+        body.addView(dpad, swapControls
+                ? frame(dp(148), dp(148), Gravity.LEFT | Gravity.BOTTOM,
+                        dp(198), 0, 0, dp(10))
+                : frame(dp(172), dp(172), Gravity.LEFT | Gravity.TOP,
+                        dp(14), dp(8), 0, 0));
 
         FrameLayout symbols = faceSymbols();
-        body.addView(symbols, frame(dp(172), dp(172), Gravity.RIGHT | Gravity.TOP,
-                0, dp(8), dp(14), 0));
+        body.addView(symbols, swapControls
+                ? frame(dp(148), dp(148), Gravity.RIGHT | Gravity.BOTTOM,
+                        0, 0, dp(198), dp(10))
+                : frame(dp(172), dp(172), Gravity.RIGHT | Gravity.TOP,
+                        0, dp(8), dp(14), 0));
 
         LinearLayout systemButtons = horizontal();
         systemButtons.addView(gameButton("SELECT", 9, PAPER), weighted(1.2f));
@@ -87,10 +97,16 @@ final class ControllerPanel {
         body.addView(systemButtons, frame(dp(250), dp(52),
                 Gravity.CENTER_HORIZONTAL | Gravity.TOP, 0, dp(12), 0, 0));
 
-        body.addView(stick("L3", true), frame(dp(148), dp(148),
-                Gravity.LEFT | Gravity.BOTTOM, dp(210), 0, 0, dp(10)));
-        body.addView(stick("R3", false), frame(dp(148), dp(148),
-                Gravity.RIGHT | Gravity.BOTTOM, 0, 0, dp(210), dp(10)));
+        body.addView(stick("L3", true), swapControls
+                ? frame(dp(148), dp(148), Gravity.LEFT | Gravity.TOP,
+                        dp(26), dp(8), 0, 0)
+                : frame(dp(148), dp(148), Gravity.LEFT | Gravity.BOTTOM,
+                        dp(210), 0, 0, dp(10)));
+        body.addView(stick("R3", false), swapControls
+                ? frame(dp(148), dp(148), Gravity.RIGHT | Gravity.TOP,
+                        0, dp(8), dp(26), 0)
+                : frame(dp(148), dp(148), Gravity.RIGHT | Gravity.BOTTOM,
+                        0, 0, dp(210), dp(10)));
 
         root.addView(body, new LinearLayout.LayoutParams(-1, 0, 1));
         return root;
@@ -101,6 +117,18 @@ final class ControllerPanel {
         leftX = leftY = rightX = rightY = 0;
         hat = HAT_NEUTRAL;
         dispatch();
+    }
+
+    void setButton(int buttonNumber, boolean down) {
+        int mask = 1 << (buttonNumber - 1);
+        int next = down ? buttons | mask : buttons & ~mask;
+        if (next == buttons) return;
+        buttons = next;
+        dispatch();
+    }
+
+    void setConnectionStatus(String value) {
+        if (connectionStatus != null) connectionStatus.setText(value);
     }
 
     private View dPad() {
@@ -140,11 +168,18 @@ final class ControllerPanel {
     private FrameLayout faceSymbols() {
         FrameLayout pad = new FrameLayout(activity);
         pad.setMotionEventSplittingEnabled(true);
-        pad.addView(gameButton("△", 4, YELLOW), faceFrame(Gravity.TOP | Gravity.CENTER_HORIZONTAL));
-        pad.addView(gameButton("□", 3, BLUE), faceFrame(Gravity.LEFT | Gravity.CENTER_VERTICAL));
-        pad.addView(gameButton("○", 2, CORAL), faceFrame(Gravity.RIGHT | Gravity.CENTER_VERTICAL));
-        pad.addView(gameButton("×", 1, GREEN), faceFrame(Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL));
+        pad.addView(symbolButton("△", 4, YELLOW), faceFrame(Gravity.TOP | Gravity.CENTER_HORIZONTAL));
+        pad.addView(symbolButton("□", 3, BLUE), faceFrame(Gravity.LEFT | Gravity.CENTER_VERTICAL));
+        pad.addView(symbolButton("○", 2, CORAL), faceFrame(Gravity.RIGHT | Gravity.CENTER_VERTICAL));
+        pad.addView(symbolButton("×", 1, GREEN), faceFrame(Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL));
         return pad;
+    }
+
+    private Button symbolButton(String label, int buttonNumber, int color) {
+        Button button = gameButton(label, buttonNumber, color);
+        button.setTextSize(26);
+        button.setTypeface(Typeface.DEFAULT_BOLD);
+        return button;
     }
 
     private View stick(String clickLabel, boolean left) {

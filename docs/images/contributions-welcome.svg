@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="220" viewBox="0 0 1000 220" role="img" aria-labelledby="title desc">
+  <title id="title">Contributions welcome</title>
+  <desc id="desc">Neo-brutalist open source contribution banner.</desc>
+  <rect width="1000" height="220" rx="28" fill="#181818"/>
+  <rect x="0" y="0" width="986" height="206" rx="28" fill="#facd50" stroke="#181818" stroke-width="7"/>
+  <circle cx="105" cy="103" r="58" fill="#ff7e67" stroke="#181818" stroke-width="7"/>
+  <path d="M76 102h58M105 73v58" stroke="#181818" stroke-width="10" stroke-linecap="round"/>
+  <text x="195" y="92" fill="#181818" font-family="Arial, sans-serif" font-size="46" font-weight="900">CONTRIBUTIONS WELCOME</text>
+  <text x="198" y="143" fill="#181818" font-family="Arial, sans-serif" font-size="23" font-weight="700">BUG FIXES · DEVICE TESTS · LAYOUTS · ACCESSIBILITY · DOCS</text>
+</svg>

@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360" role="img" aria-labelledby="title desc">
+  <title id="title">GlassHID project banner</title>
+  <desc id="desc">Neo-brutalist banner showing a phone becoming a keyboard, mouse, and gamepad.</desc>
+  <rect width="1200" height="360" rx="34" fill="#f7f3ea"/>
+  <rect x="35" y="35" width="1130" height="290" rx="30" fill="#181818"/>
+  <rect x="25" y="25" width="1130" height="290" rx="30" fill="#8bd6aa" stroke="#181818" stroke-width="8"/>
+  <text x="82" y="150" fill="#181818" font-family="Arial, sans-serif" font-size="82" font-weight="900">GlassHID</text>
+  <text x="86" y="205" fill="#181818" font-family="Arial, sans-serif" font-size="27" font-weight="700">YOUR PHONE IS THE PERIPHERAL.</text>
+  <text x="86" y="258" fill="#181818" font-family="Arial, sans-serif" font-size="21" font-weight="700">KEYBOARD  ·  TRACKPAD  ·  GAMEPAD  ·  OFFLINE</text>
+  <g transform="translate(760 70)">
+    <rect x="12" y="12" width="320" height="205" rx="30" fill="#181818"/>
+    <rect width="320" height="205" rx="30" fill="#84b4f4" stroke="#181818" stroke-width="8"/>
+    <rect x="24" y="28" width="272" height="58" rx="16" fill="#f7f3ea" stroke="#181818" stroke-width="6"/>
+    <circle cx="85" cy="144" r="32" fill="#181818"/>
+    <circle cx="235" cy="144" r="32" fill="#181818"/>
+    <path d="M63 144h44M85 122v44" stroke="#f7f3ea" stroke-width="10" stroke-linecap="round"/>
+    <path d="M214 142l17-17 21 21M214 160h38" fill="none" stroke="#f7f3ea" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>
