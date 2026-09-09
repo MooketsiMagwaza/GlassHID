@@ -58,6 +58,10 @@ public class MainActivity extends Activity implements TrackpadGestureListener.Ho
     private TextView systemStatsView;
     private TextView bluetoothStateView;
     private RadioButton bluetoothModeButton;
+    private Button layoutSwitch;
+    private LinearLayout normalTopBar;
+    private LinearLayout controllerTopBar;
+    private LinearLayout inputContainer;
     private LinearLayout pairedDevices;
     private volatile int mode = MODE_OFF;
     private volatile String pcStats = "LAPTOP BAT —";
@@ -66,6 +70,7 @@ public class MainActivity extends Activity implements TrackpadGestureListener.Ho
     private UsbBridgeServer usb;
     private FeedbackController feedback;
     private NeoUi neoUi;
+    private ControllerPanel controllerPanel;
     private boolean shiftOn;
     private boolean capsOn;
     private boolean ctrlOn;
@@ -84,6 +89,7 @@ public class MainActivity extends Activity implements TrackpadGestureListener.Ho
     private int repeatMs = 55;
     private boolean hapticsOn = true;
     private boolean laptopClicksOn = true;
+    private boolean controllerLayout;
     private final List<Button> shiftButtons = new ArrayList<>();
     private final List<Button> capsButtons = new ArrayList<>();
     private final List<Button> ctrlButtons = new ArrayList<>();
@@ -137,6 +143,7 @@ public class MainActivity extends Activity implements TrackpadGestureListener.Ho
 
     @Override
     protected void onPause() {
+        if (controllerPanel != null) controllerPanel.releaseAll();
         bluetooth.setForeground(false);
         super.onPause();
     }
@@ -149,6 +156,7 @@ public class MainActivity extends Activity implements TrackpadGestureListener.Ho
         root.setBackgroundColor(PAPER);
 
         LinearLayout top = new LinearLayout(this);
+        normalTopBar = top;
         top.setOrientation(LinearLayout.HORIZONTAL);
         top.setGravity(Gravity.CENTER_VERTICAL);
 
@@ -163,6 +171,10 @@ public class MainActivity extends Activity implements TrackpadGestureListener.Ho
         Button settingsMenu = neoButton("SET", PAPER);
         settingsMenu.setOnClickListener(this::showSettingsPopup);
         top.addView(settingsMenu, new LinearLayout.LayoutParams(dp(60), dp(54)));
+
+        layoutSwitch = neoButton("GAMEPAD", BLUE);
+        layoutSwitch.setOnClickListener(v -> showInputLayout(true, true));
+        top.addView(layoutSwitch, new LinearLayout.LayoutParams(dp(78), dp(54)));
 
         TextView title = text("A05s", 22);
         title.setTypeface(Typeface.DEFAULT_BOLD);
@@ -186,6 +198,8 @@ public class MainActivity extends Activity implements TrackpadGestureListener.Ho
         modes.addView(bluetoothModeButton);
         modes.addView(usb);
         modes.setOnCheckedChangeListener((group, checkedId) -> {
+            if (mode == MODE_BLUETOOTH && checkedId != MODE_BLUETOOTH &&
+                    controllerPanel != null) controllerPanel.releaseAll();
             mode = checkedId;
             getSharedPreferences("controls", MODE_PRIVATE).edit()
                     .putInt("active_mode", mode).apply();
@@ -203,6 +217,24 @@ public class MainActivity extends Activity implements TrackpadGestureListener.Ho
         root.addView(top, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(58)));
 
+        controllerTopBar = new LinearLayout(this);
+        controllerTopBar.setGravity(Gravity.CENTER);
+        Button keys = neoButton("KEYS", BLUE);
+        keys.setOnClickListener(v -> showInputLayout(false, true));
+        controllerTopBar.addView(keys, new LinearLayout.LayoutParams(dp(140), dp(46)));
+        root.addView(controllerTopBar, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(50)));
+
+        inputContainer = new LinearLayout(this);
+        inputContainer.setOrientation(LinearLayout.VERTICAL);
+        inputContainer.setMotionEventSplittingEnabled(true);
+        root.addView(inputContainer, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
+        showInputLayout(controllerLayout, false);
+        return root;
+    }
+
+    private View buildKeyboard() {
         LinearLayout keyboard = new LinearLayout(this);
         keyboard.setOrientation(LinearLayout.VERTICAL);
         keyboard.setPadding(0, dp(5), 0, 0);
@@ -251,9 +283,35 @@ public class MainActivity extends Activity implements TrackpadGestureListener.Ho
         keyboard.addView(r1, rowParams()); keyboard.addView(r2, rowParams());
         keyboard.addView(r3, rowParams()); keyboard.addView(r4, rowParams());
         keyboard.addView(r5, rowParams());
-        root.addView(keyboard, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
-        return root;
+        return keyboard;
+    }
+
+    private void showInputLayout(boolean useController, boolean announce) {
+        controllerLayout = useController;
+        saveSettings();
+        if (normalTopBar != null)
+            normalTopBar.setVisibility(useController ? View.GONE : View.VISIBLE);
+        if (controllerTopBar != null)
+            controllerTopBar.setVisibility(useController ? View.VISIBLE : View.GONE);
+        if (inputContainer == null) return;
+
+        if (controllerPanel != null) controllerPanel.releaseAll();
+        controllerPanel = null;
+        inputContainer.removeAllViews();
+        if (useController) {
+            bluetoothModeButton.setChecked(true);
+            controllerPanel = new ControllerPanel(this, neoUi, feedback,
+                    this::sendGamepadReport);
+            inputContainer.addView(controllerPanel.build(),
+                    new LinearLayout.LayoutParams(-1, -1));
+            if (announce) Toast.makeText(this,
+                    "Bluetooth controller layout", Toast.LENGTH_SHORT).show();
+        } else {
+            inputContainer.addView(buildKeyboard(),
+                    new LinearLayout.LayoutParams(-1, -1));
+            if (announce) Toast.makeText(this,
+                    "Keyboard layout", Toast.LENGTH_SHORT).show();
+        }
     }
 
     private void showTrackpadPopup(View anchor) {
@@ -419,6 +477,7 @@ public class MainActivity extends Activity implements TrackpadGestureListener.Ho
         repeatMs = values.getInt("repeat_ms", 55);
         hapticsOn = values.getBoolean("haptics", true);
         laptopClicksOn = values.getBoolean("laptop_clicks", true);
+        controllerLayout = values.getBoolean("controller_layout", false);
     }
 
     private void saveSettings() {
@@ -429,6 +488,7 @@ public class MainActivity extends Activity implements TrackpadGestureListener.Ho
                 .putInt("repeat_ms", repeatMs)
                 .putBoolean("haptics", hapticsOn)
                 .putBoolean("laptop_clicks", laptopClicksOn)
+                .putBoolean("controller_layout", controllerLayout)
                 .apply();
     }
 
@@ -884,6 +944,12 @@ public class MainActivity extends Activity implements TrackpadGestureListener.Ho
 
     private void sendBluetoothMouse(int buttons, int dx, int dy, int wheel) {
         bluetooth.sendMouse(buttons, dx, dy, wheel);
+    }
+
+    private void sendGamepadReport(int buttons, int leftX, int leftY,
+                                   int rightX, int rightY, int hat) {
+        if (mode == MODE_BLUETOOTH)
+            bluetooth.sendGamepad(buttons, leftX, leftY, rightX, rightY, hat);
     }
 
     private void updateStatus() {

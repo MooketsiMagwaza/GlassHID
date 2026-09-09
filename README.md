@@ -1,6 +1,6 @@
 # A05s Input Bridge
 
-A completely local keyboard and mouse for the Samsung Galaxy A05s. The phone
+A completely local keyboard, mouse, and gamepad for the Samsung Galaxy A05s. The phone
 does not need Wi-Fi, mobile data, an account, or a cloud service.
 
 The landscape-only interface uses a compact neo-brutalist keyboard. The full
@@ -9,6 +9,13 @@ top-left without permanently taking space away from the keys. Shift, Caps, Ctrl,
 Alt, and Win/Super are functional. Tap a modifier and then a key for a chord;
 the active chord is shown beside the app title. Hold Win/Super to send the
 Windows key by itself; a normal tap only latches it for a chord.
+
+Tap **GAMEPAD** to replace the keyboard with a PS3-inspired Bluetooth controller,
+then tap the centered **KEYS** button to return. Controller mode hides the normal
+Trackpad, Tools, Settings, connection, and pairing toolbar to maximize usable
+space. It provides two analog/clickable sticks, an eight-way D-pad, the
+triangle/circle/cross/square cluster, L1/L2/R1/R2, Select, PS, and Start. Button
+combinations and stick-plus-button input can be held simultaneously.
 
 Every control has visible input feedback: touch/click depresses the face into
 its dark shadow, hover/focus lifts it, and phone touches produce haptic feedback.
@@ -31,7 +38,8 @@ trackpad card's dock button moves it between the left and right edges.
 ## Bluetooth mode
 
 Bluetooth mode uses Android's native HID Device profile, so Windows sees the
-phone as an ordinary keyboard and mouse. No Windows companion is required.
+phone as an ordinary composite keyboard, mouse, and standard HID gamepad. No
+Windows companion is required for input.
 Volume and mute also work directly over Bluetooth. Laptop brightness and the
 laptop battery status use the optional USB cable helper described below because
 Bluetooth HID has no return-data channel.
@@ -46,6 +54,12 @@ Windows' generic “Connected” label only confirms the Bluetooth bond. The app
 top bar says **INPUT ✓** only after Android reports that the keyboard/mouse HID
 session is genuinely open. The Pair card also distinguishes **PAIRED · INPUT
 OFFLINE** from **INPUT CONNECTED ✓**.
+
+After upgrading from a keyboard-only build, remove and pair `Galaxy A05s` once
+in Windows Bluetooth settings. Windows caches a paired device's HID collections,
+so re-pairing is required once before its Game Controllers panel can see the new
+gamepad collection. This is a standard HID/DirectInput controller; games that
+accept only Xbox/XInput devices may require a local mapper.
 
 `windows/Pair-Bluetooth.ps1` is an optional local Windows pairing helper. Run it
 while the phone is visible if the normal Add device screen does not find the phone.
@@ -91,5 +105,5 @@ injecting any keyboard or mouse events.
 This project intentionally uses only Android platform APIs and the Python
 standard library, so its runtime has no third-party dependencies. The Android
 code is split by responsibility: Bluetooth HID, USB transport, feedback,
-neo-brutalist styling, key mapping, trackpad gestures, and the scroll strip are
-separate components; `MainActivity` coordinates the screen.
+neo-brutalist styling, key mapping, controller layout, trackpad gestures, and the
+scroll strip are separate components; `MainActivity` coordinates the screen.

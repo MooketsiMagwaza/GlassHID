@@ -31,7 +31,13 @@ final class BluetoothHidController {
             "05010902A10185020901A100050919012905150025019505" +
             "7501810295017503810105010930093109381581257F7508" +
             "95038106C0C0" +
-            "050C0901A1018503150026FF0319002AFF03751095018100C0");
+            "050C0901A1018503150026FF0319002AFF03751095018100C0" +
+            // Gamepad, report 4: four signed axes, 16 buttons, and an 8-way hat.
+            "05010905A1018504" +
+            "09300931093209351581257F750895048102" +
+            "05091901291015002501750195108102" +
+            "05010939150025073500463B016514750495018142" +
+            "6500750495018101C0");
 
     private final Activity activity;
     private final Handler handler;
@@ -202,6 +208,17 @@ final class BluetoothHidController {
                 new byte[]{(byte) buttons, 0, 0, 0});
     }
 
+    void sendGamepad(int buttons, int leftX, int leftY,
+                     int rightX, int rightY, int hat) {
+        if (!isInputLive()) return;
+        sendReport(hid, connectedHost, 4, new byte[]{
+                (byte) clamp(leftX), (byte) clamp(leftY),
+                (byte) clamp(rightX), (byte) clamp(rightY),
+                (byte) (buttons & 0xFF), (byte) ((buttons >> 8) & 0xFF),
+                (byte) (hat & 0x0F)
+        });
+    }
+
     void destroy() {
         destroyed = true;
         if (hid != null && registered) hid.unregisterApp();
@@ -221,7 +238,7 @@ final class BluetoothHidController {
                 registrationPending) return;
         registrationPending = true;
         BluetoothHidDeviceAppSdpSettings sdp = new BluetoothHidDeviceAppSdpSettings(
-                "A05s Input", "Offline keyboard and mouse", "Local", (byte) 0xC0,
+                "A05s Input", "Offline keyboard, mouse, and gamepad", "Local", (byte) 0xC0,
                 HID_DESCRIPTOR);
         boolean requested = hid.registerApp(sdp, null, null, activity.getMainExecutor(),
                 new BluetoothHidDevice.Callback() {
