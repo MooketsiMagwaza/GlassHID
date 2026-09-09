@@ -135,7 +135,7 @@ final class BluetoothHidController {
 
     String shortStatus() {
         if (!hasPermission()) return "PERMISSION NEEDED";
-        if (isInputLive()) return "INPUT ✓ " + compactName(connectedHost);
+        if (isInputLive()) return "INPUT CONNECTED ✓";
         if (preferredHost() == null) return "NOT PAIRED";
         if (!registered) return "PAIRED · STARTING HID";
         if (connectionState == BluetoothProfile.STATE_CONNECTING)

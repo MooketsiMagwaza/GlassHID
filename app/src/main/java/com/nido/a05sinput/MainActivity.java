@@ -92,6 +92,7 @@ public class MainActivity extends Activity implements TrackpadGestureListener.Ho
     private boolean laptopClicksOn = true;
     private boolean controllerLayout;
     private boolean swapGamepadControls;
+    private int gamepadLabelStyle;
     private final List<Button> shiftButtons = new ArrayList<>();
     private final List<Button> capsButtons = new ArrayList<>();
     private final List<Button> ctrlButtons = new ArrayList<>();
@@ -312,7 +313,7 @@ public class MainActivity extends Activity implements TrackpadGestureListener.Ho
         if (useController) {
             bluetoothModeButton.setChecked(true);
             controllerPanel = new ControllerPanel(this, neoUi, feedback,
-                    this::sendGamepadReport, swapGamepadControls);
+                    this::sendGamepadReport, swapGamepadControls, gamepadLabelStyle);
             inputContainer.addView(controllerPanel.build(),
                     new LinearLayout.LayoutParams(-1, -1));
             if (announce) Toast.makeText(this,
@@ -508,6 +509,7 @@ public class MainActivity extends Activity implements TrackpadGestureListener.Ho
         laptopClicksOn = values.getBoolean("laptop_clicks", true);
         controllerLayout = values.getBoolean("controller_layout", false);
         swapGamepadControls = values.getBoolean("swap_gamepad_controls", false);
+        gamepadLabelStyle = values.getInt("gamepad_label_style", 0);
     }
 
     private void saveSettings() {
@@ -520,6 +522,7 @@ public class MainActivity extends Activity implements TrackpadGestureListener.Ho
                 .putBoolean("laptop_clicks", laptopClicksOn)
                 .putBoolean("controller_layout", controllerLayout)
                 .putBoolean("swap_gamepad_controls", swapGamepadControls)
+                .putInt("gamepad_label_style", gamepadLabelStyle)
                 .apply();
     }
 
@@ -573,6 +576,17 @@ public class MainActivity extends Activity implements TrackpadGestureListener.Ho
             refreshSettingValues();
         });
         card.addView(controllerSwap, new LinearLayout.LayoutParams(-1, dp(48)));
+
+        Button controllerLabels = neoButton("CONTROLLER LABELS · " +
+                gamepadLabelStyleName(), BLUE);
+        settingValueViews.put("CONTROLLER_LABELS", controllerLabels);
+        controllerLabels.setOnClickListener(v -> {
+            gamepadLabelStyle = (gamepadLabelStyle + 1) % 3;
+            saveSettings();
+            refreshSettingValues();
+            haptic(v, HapticFeedbackConstants.CLOCK_TICK);
+        });
+        card.addView(controllerLabels, new LinearLayout.LayoutParams(-1, dp(48)));
 
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
@@ -648,6 +662,13 @@ public class MainActivity extends Activity implements TrackpadGestureListener.Ho
         if (settingValueViews.containsKey("CONTROLLER_SWAP"))
             settingValueViews.get("CONTROLLER_SWAP").setText("SWAP PAD / STICKS · " +
                     (swapGamepadControls ? "ON" : "OFF"));
+        if (settingValueViews.containsKey("CONTROLLER_LABELS"))
+            settingValueViews.get("CONTROLLER_LABELS").setText("CONTROLLER LABELS · " +
+                    gamepadLabelStyleName());
+    }
+
+    private String gamepadLabelStyleName() {
+        return gamepadLabelStyle == 1 ? "ABXY" : gamepadLabelStyle == 2 ? "1–4" : "PS";
     }
 
     private void showFunctionPopup(View anchor) {

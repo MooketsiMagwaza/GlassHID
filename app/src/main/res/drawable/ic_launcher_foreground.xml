@@ -7,30 +7,30 @@
     <!-- A single, readable GlassHID "G" card in the app's neo-brutalist palette. -->
     <path
         android:fillColor="#181818"
-        android:pathData="M34,24 H78 C86,24 91,29 91,37 V76 C91,84 86,89 78,89 H34 C26,89 21,84 21,76 V37 C21,29 26,24 34,24 Z" />
+        android:pathData="M36,28 H74 C81,28 85,32 85,39 V73 C85,80 81,84 74,84 H36 C29,84 25,80 25,73 V39 C25,32 29,28 36,28 Z" />
     <path
         android:fillColor="#8BD6AA"
         android:strokeColor="#181818"
         android:strokeWidth="4"
-        android:pathData="M29,18 H73 C81,18 86,23 86,31 V70 C86,78 81,83 73,83 H29 C21,83 16,78 16,70 V31 C16,23 21,18 29,18 Z" />
+        android:pathData="M32,22 H70 C77,22 81,26 81,33 V67 C81,74 77,78 70,78 H32 C25,78 21,74 21,67 V33 C21,26 25,22 32,22 Z" />
     <!-- Cream glass inset. -->
     <path
         android:fillColor="#F7F3EA"
         android:strokeColor="#181818"
         android:strokeWidth="3"
-        android:pathData="M29,28 H73 C76,28 78,30 78,33 V68 C78,71 76,73 73,73 H29 C26,73 24,71 24,68 V33 C24,30 26,28 29,28 Z" />
+        android:pathData="M32,31 H70 C73,31 75,33 75,36 V64 C75,67 73,69 70,69 H32 C29,69 27,67 27,64 V36 C27,33 29,31 32,31 Z" />
     <!-- Bold G monogram, legible at launcher size. -->
     <path
         android:fillColor="#00000000"
         android:strokeColor="#181818"
-        android:strokeWidth="8"
+        android:strokeWidth="7"
         android:strokeLineCap="round"
         android:strokeLineJoin="round"
-        android:pathData="M66,41 C62,36 57,34 51,34 C41,34 34,42 34,51 C34,61 41,67 51,67 C59,67 66,62 68,56 H55" />
+        android:pathData="M63,42 C60,38 56,36 51,36 C42,36 36,42 36,50 C36,59 42,64 51,64 C58,64 63,60 65,55 H54" />
     <!-- Coral input indicator. -->
     <path
         android:fillColor="#FF7E67"
         android:strokeColor="#181818"
         android:strokeWidth="2"
-        android:pathData="M68,52 H77 V61 H68 Z" />
+        android:pathData="M65,51 H73 V59 H65 Z" />
 </vector>
