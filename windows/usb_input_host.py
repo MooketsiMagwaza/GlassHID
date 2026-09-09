@@ -218,7 +218,7 @@ def main() -> int:
     args = parser.parse_args()
 
     configure_adb(args.adb)
-    print("A05s local input and laptop-battery helper ready. Press Ctrl+C to stop.")
+    print("GlassHID local input and laptop-battery helper ready. Press Ctrl+C to stop.")
     while True:
         try:
             with socket.create_connection(("127.0.0.1", PORT), timeout=3) as connection:

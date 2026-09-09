@@ -65,7 +65,7 @@ final class ControllerPanel {
         connectionStatus.setTextColor(INK);
         connectionStatus.setGravity(Gravity.CENTER);
         identity.addView(connectionStatus, new LinearLayout.LayoutParams(-1, 0, 1));
-        TextView wordmark = ui.text("A05s  /  GAMEPAD", 13);
+        TextView wordmark = ui.text("GLASSHID  /  GAMEPAD", 13);
         wordmark.setTypeface(Typeface.DEFAULT_BOLD);
         wordmark.setTextColor(INK);
         wordmark.setGravity(Gravity.CENTER);

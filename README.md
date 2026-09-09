@@ -2,11 +2,11 @@
 
 ![GlassHID — your phone is the peripheral](docs/images/project-banner.svg)
 
-A completely local keyboard, mouse, and gamepad for the Samsung Galaxy A05s. The phone
-does not need Wi-Fi, mobile data, an account, or a cloud service.
+<img src="docs/images/glasshid-mark.svg" width="120" alt="GlassHID logo">
 
-The current development build retains the **A05s Input** app label, while
-**GlassHID** is the proposed public project name.
+A completely local keyboard, mouse, and gamepad for Android. The phone does not
+need Wi-Fi, mobile data, an account, or a cloud service. The first development
+device is a Samsung Galaxy A05s.
 
 The landscape-only interface uses a compact neo-brutalist keyboard. The full
 keyboard occupies the canvas; **TRACKPAD ▾** opens the mouse surface from the
@@ -59,7 +59,7 @@ Volume and mute also work directly over Bluetooth. Laptop brightness and the
 laptop battery status use the optional USB cable helper described below because
 Bluetooth HID has no return-data channel.
 
-1. Open **A05s Input** on the phone and allow Nearby devices.
+1. Open **GlassHID** on the phone and allow Nearby devices.
 2. Tap **Make phone visible**, then pair `Galaxy A05s` in Windows Bluetooth settings.
 3. Back in the app, tap the button for the paired computer and select **Bluetooth**.
    The app remembers this computer and active mode, then attempts to reconnect
@@ -107,7 +107,7 @@ exist only on each device's loopback interface; the cable carries the data and
 the phone never joins a network.
 
 1. Keep USB debugging enabled and connect the cable.
-2. Open **A05s Input** and select **USB**.
+2. Open **GlassHID** and select **USB**.
 3. Run `windows/Start-UsbInput.ps1` on Windows. Press Ctrl+C to stop it. The same
    helper also enables laptop battery status and reliable laptop-panel brightness in
    Bluetooth mode.

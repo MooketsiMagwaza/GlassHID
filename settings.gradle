@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "A05sInputBridge"
+rootProject.name = "GlassHID"
 include ':app'

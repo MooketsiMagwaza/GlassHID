@@ -119,7 +119,7 @@ public static class LocalBluetoothPairing
         }
         finally { BluetoothFindRadioClose(radioFind); }
 
-        return "The device was not found. Make it visible in A05s Input and try again.";
+        return "The device was not found. Make it visible in GlassHID and try again.";
     }
 }
 '@

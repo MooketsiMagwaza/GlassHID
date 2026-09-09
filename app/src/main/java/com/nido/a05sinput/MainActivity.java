@@ -178,11 +178,11 @@ public class MainActivity extends Activity implements TrackpadGestureListener.Ho
         layoutSwitch.setOnClickListener(v -> showInputLayout(true, true));
         top.addView(layoutSwitch, new LinearLayout.LayoutParams(dp(78), dp(54)));
 
-        TextView title = text("A05s", 22);
+        TextView title = text("GlassHID", 18);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         title.setTextColor(INK);
         title.setGravity(Gravity.CENTER);
-        top.addView(title, new LinearLayout.LayoutParams(dp(70), dp(54)));
+        top.addView(title, new LinearLayout.LayoutParams(dp(96), dp(54)));
 
         status = text("Starting local input services…", 11);
         status.setTextSize(10);

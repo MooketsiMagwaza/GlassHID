@@ -238,7 +238,7 @@ final class BluetoothHidController {
                 registrationPending) return;
         registrationPending = true;
         BluetoothHidDeviceAppSdpSettings sdp = new BluetoothHidDeviceAppSdpSettings(
-                "A05s Input", "Offline keyboard, mouse, and gamepad", "Local", (byte) 0xC0,
+                "GlassHID", "Offline keyboard, mouse, and gamepad", "Local", (byte) 0xC0,
                 HID_DESCRIPTOR);
         boolean requested = hid.registerApp(sdp, null, null, activity.getMainExecutor(),
                 new BluetoothHidDevice.Callback() {
