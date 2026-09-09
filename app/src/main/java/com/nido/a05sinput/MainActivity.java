@@ -4,9 +4,6 @@ import android.Manifest;
 import android.app.Activity;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
-import android.bluetooth.BluetoothHidDevice;
-import android.bluetooth.BluetoothHidDeviceAppSdpSettings;
-import android.bluetooth.BluetoothProfile;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.res.ColorStateList;
@@ -20,10 +17,8 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
-import android.os.SystemClock;
 import android.provider.Settings;
 import android.util.Base64;
-import android.util.Log;
 import android.view.Gravity;
 import android.view.HapticFeedbackConstants;
 import android.view.MotionEvent;
@@ -36,27 +31,17 @@ import android.widget.PopupWindow;
 import android.widget.RadioButton;
 import android.widget.RadioGroup;
 import android.widget.TextView;
+import android.widget.Toast;
 
-import java.io.BufferedReader;
-import java.io.BufferedWriter;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.OutputStreamWriter;
-import java.net.InetAddress;
-import java.net.ServerSocket;
-import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
-public class MainActivity extends Activity {
-    private static final int PORT = 27183;
+public class MainActivity extends Activity implements TrackpadGestureListener.Host,
+        ScrollPadListener.Host {
     private static final int REQUEST_BT = 100;
     private static final int MODE_OFF = 0;
     private static final int MODE_BLUETOOTH = 1;
@@ -68,30 +53,24 @@ public class MainActivity extends Activity {
     private static final int CORAL = Color.rgb(255, 126, 103);
     private static final int BLUE = Color.rgb(139, 188, 255);
 
-    private final ExecutorService io = Executors.newCachedThreadPool();
-    private final ExecutorService usbWriter = Executors.newSingleThreadExecutor();
     private final Handler uiHandler = new Handler(Looper.getMainLooper());
-    private final List<UsbClient> usbClients = new CopyOnWriteArrayList<>();
     private TextView status;
     private TextView systemStatsView;
+    private TextView bluetoothStateView;
+    private RadioButton bluetoothModeButton;
     private LinearLayout pairedDevices;
     private volatile int mode = MODE_OFF;
     private volatile String pcStats = "LAPTOP BAT —";
-    private ServerSocket usbServer;
 
-    private BluetoothAdapter adapter;
-    private BluetoothHidDevice hid;
-    private BluetoothDevice hidHost;
-    private boolean hidRegistered;
-    private boolean hidBinding;
-    private boolean reconnectScheduled;
-    private boolean destroyed;
+    private BluetoothHidController bluetooth;
+    private UsbBridgeServer usb;
+    private FeedbackController feedback;
+    private NeoUi neoUi;
     private boolean shiftOn;
     private boolean capsOn;
     private boolean ctrlOn;
     private boolean altOn;
     private boolean winOn;
-    private long nextHidKeyAt;
     private int mouseButtons;
     private boolean trackpadOnRight;
     private PopupWindow trackpadPopup;
@@ -104,32 +83,62 @@ public class MainActivity extends Activity {
     private int scrollPercent = 100;
     private int repeatMs = 55;
     private boolean hapticsOn = true;
+    private boolean laptopClicksOn = true;
     private final List<Button> shiftButtons = new ArrayList<>();
     private final List<Button> capsButtons = new ArrayList<>();
     private final List<Button> ctrlButtons = new ArrayList<>();
     private final List<Button> altButtons = new ArrayList<>();
     private final List<Button> winButtons = new ArrayList<>();
 
-    private static final byte[] HID_DESCRIPTOR = hex(
-            // Keyboard, report 1: modifiers + six simultaneous keys.
-            "05010906A1018501050719E029E715002501750195088102" +
-            "95017508810195067508150025650507190029658100C0" +
-            // Mouse, report 2: five buttons + relative X/Y + wheel.
-            "05010902A10185020901A100050919012905150025019505" +
-            "7501810295017503810105010930093109381581257F7508" +
-            "95038106C0C0" +
-            // Consumer control, report 3: volume, mute, and display brightness.
-            "050C0901A1018503150026FF0319002AFF03751095018100C0");
-
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-        adapter = BluetoothAdapter.getDefaultAdapter();
+        bluetooth = new BluetoothHidController(this, uiHandler,
+                new BluetoothHidController.Listener() {
+                    @Override public void onStateChanged() {
+                        refreshBondedDevices();
+                        updateStatus();
+                    }
+
+                    @Override public void onInputConnected(String hostName) {
+                        Toast.makeText(MainActivity.this,
+                                "Bluetooth input connected ✓\n" + hostName,
+                                Toast.LENGTH_LONG).show();
+                    }
+                });
         loadSettings();
+        usb = new UsbBridgeServer(new UsbBridgeServer.Listener() {
+            @Override public void onHostLine(String line) {
+                handleHostLine(line);
+            }
+
+            @Override public void onStateChanged() {
+                if (!usb.hasClients()) pcStats = "LAPTOP BAT —";
+                updateStatus();
+            }
+        });
+        feedback = new FeedbackController(this,
+                () -> usb.send("SOUND KEY"));
+        feedback.setEnabled(hapticsOn);
+        feedback.setLaptopClicksEnabled(laptopClicksOn);
+        neoUi = new NeoUi(this, feedback, INK);
         setContentView(buildUi());
-        startUsbServer();
+        usb.start();
         requestBluetoothPermission();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        bluetooth.setForeground(true);
+        bluetooth.setActive(mode == MODE_BLUETOOTH);
+    }
+
+    @Override
+    protected void onPause() {
+        bluetooth.setForeground(false);
+        super.onPause();
     }
 
     private View buildUi() {
@@ -171,19 +180,19 @@ public class MainActivity extends Activity {
         RadioGroup modes = new RadioGroup(this);
         modes.setOrientation(LinearLayout.HORIZONTAL);
         RadioButton off = radio("Off", MODE_OFF);
-        RadioButton bluetooth = radio("BT", MODE_BLUETOOTH);
+        bluetoothModeButton = radio("BT", MODE_BLUETOOTH);
         RadioButton usb = radio("USB", MODE_USB);
         modes.addView(off);
-        modes.addView(bluetooth);
+        modes.addView(bluetoothModeButton);
         modes.addView(usb);
         modes.setOnCheckedChangeListener((group, checkedId) -> {
             mode = checkedId;
             getSharedPreferences("controls", MODE_PRIVATE).edit()
                     .putInt("active_mode", mode).apply();
-            if (mode == MODE_BLUETOOTH) connectPreferredHost();
+            bluetooth.setActive(mode == MODE_BLUETOOTH);
             updateStatus();
         });
-        if (mode == MODE_BLUETOOTH) bluetooth.setChecked(true);
+        if (mode == MODE_BLUETOOTH) bluetoothModeButton.setChecked(true);
         else if (mode == MODE_USB) usb.setChecked(true);
         else off.setChecked(true);
         top.addView(modes, new LinearLayout.LayoutParams(dp(165), dp(54)));
@@ -221,12 +230,12 @@ public class MainActivity extends Activity {
         addSpecialKey(r3, "Enter", "ENTER", 0x28, 2.05f, YELLOW);
 
         LinearLayout r4 = keyboardRow();
-        addModifierKey(r4, "Shift", "SHIFT", 1.2f);
+        addModifierKey(r4, "Shift", "SHIFT", 1.55f);
         for (String letter : new String[]{"Z","X","C","V","B","N","M"}) addLetterKey(r4, letter);
         addPrintableKey(r4, ",\n<", ",", "<", 1); addPrintableKey(r4, ".\n>", ".", ">", 1);
         addPrintableKey(r4, "/\n?", "/", "?", 1);
         addSpecialKey(r4, "↑", "UP", 0x52, 1, BLUE);
-        addModifierKey(r4, "Shift", "SHIFT", 2.1f);
+        addModifierKey(r4, "⇧", "SHIFT", 0.8f);
 
         LinearLayout r5 = keyboardRow();
         addModifierKey(r5, "Ctrl", "CTRL", 1.4f);
@@ -272,12 +281,12 @@ public class MainActivity extends Activity {
         LinearLayout surfaces = new LinearLayout(this);
         surfaces.setOrientation(LinearLayout.HORIZONTAL);
 
-        TextView trackpad = text("TRACKPAD\nTap · hold/double-tap drag", 15);
+        TextView trackpad = text("TRACKPAD\nTap · hold/double-tap drag\n3 fingers · swipe", 15);
         trackpad.setTypeface(Typeface.DEFAULT_BOLD);
         trackpad.setGravity(Gravity.CENTER);
         trackpad.setTextColor(PAPER);
         trackpad.setBackground(rounded(INK));
-        trackpad.setOnTouchListener(new TrackpadListener());
+        trackpad.setOnTouchListener(new TrackpadGestureListener(uiHandler, this));
         trackpad.setOnHoverListener((view, event) -> {
             if (event.getActionMasked() == MotionEvent.ACTION_HOVER_ENTER) {
                 view.animate().scaleX(1.015f).scaleY(1.015f).setDuration(80).start();
@@ -294,7 +303,7 @@ public class MainActivity extends Activity {
         scrollPad.setGravity(Gravity.CENTER);
         scrollPad.setTextColor(INK);
         scrollPad.setBackground(rounded(BLUE));
-        scrollPad.setOnTouchListener(new ScrollPadListener());
+        scrollPad.setOnTouchListener(new ScrollPadListener(this));
         scrollPad.setOnHoverListener((view, event) -> {
             if (event.getActionMasked() == MotionEvent.ACTION_HOVER_ENTER) {
                 view.animate().scaleX(1.025f).scaleY(1.015f).setDuration(80).start();
@@ -320,14 +329,15 @@ public class MainActivity extends Activity {
         card.addView(clicks, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(52)));
 
-        trackpadPopup = new PopupWindow(card, dp(338), dp(285), true);
+        int trackpadWidth = dp(520);
+        trackpadPopup = new PopupWindow(card, trackpadWidth, dp(300), true);
         trackpadPopup.setBackgroundDrawable(rounded(Color.TRANSPARENT));
         trackpadPopup.setOutsideTouchable(true);
         trackpadPopup.setElevation(dp(12));
         int[] location = new int[2];
         anchor.getLocationOnScreen(location);
         int xOffset = trackpadOnRight
-                ? getResources().getDisplayMetrics().widthPixels - dp(338) - location[0]
+                ? getResources().getDisplayMetrics().widthPixels - trackpadWidth - location[0]
                 : 0;
         trackpadPopup.showAsDropDown(anchor, xOffset, dp(4));
     }
@@ -408,6 +418,7 @@ public class MainActivity extends Activity {
         scrollPercent = values.getInt("scroll_percent", 100);
         repeatMs = values.getInt("repeat_ms", 55);
         hapticsOn = values.getBoolean("haptics", true);
+        laptopClicksOn = values.getBoolean("laptop_clicks", true);
     }
 
     private void saveSettings() {
@@ -417,6 +428,7 @@ public class MainActivity extends Activity {
                 .putInt("scroll_percent", scrollPercent)
                 .putInt("repeat_ms", repeatMs)
                 .putBoolean("haptics", hapticsOn)
+                .putBoolean("laptop_clicks", laptopClicksOn)
                 .apply();
     }
 
@@ -444,12 +456,24 @@ public class MainActivity extends Activity {
         haptics.setOnClickListener(v -> {
             hapticsOn = !hapticsOn;
             saveSettings();
+            feedback.setEnabled(hapticsOn);
             refreshSettingValues();
             haptic(v, HapticFeedbackConstants.CLOCK_TICK);
         });
         card.addView(haptics, new LinearLayout.LayoutParams(-1, dp(48)));
 
-        settingsPopup = new PopupWindow(card, dp(315), dp(280), true);
+        Button laptopClicks = neoButton("LAPTOP CLICKS · " +
+                (laptopClicksOn ? "ON" : "OFF"), BLUE);
+        settingValueViews.put("LAPTOP_CLICKS", laptopClicks);
+        laptopClicks.setOnClickListener(v -> {
+            laptopClicksOn = !laptopClicksOn;
+            feedback.setLaptopClicksEnabled(laptopClicksOn);
+            saveSettings();
+            refreshSettingValues();
+        });
+        card.addView(laptopClicks, new LinearLayout.LayoutParams(-1, dp(48)));
+
+        settingsPopup = new PopupWindow(card, dp(315), dp(334), true);
         settingsPopup.setBackgroundDrawable(rounded(Color.TRANSPARENT));
         settingsPopup.setOutsideTouchable(true);
         settingsPopup.setElevation(dp(12));
@@ -513,6 +537,9 @@ public class MainActivity extends Activity {
             settingValueViews.get("REPEAT").setText(repeatMs + " ms");
         if (settingValueViews.containsKey("HAPTICS"))
             settingValueViews.get("HAPTICS").setText("HAPTICS · " + (hapticsOn ? "ON" : "OFF"));
+        if (settingValueViews.containsKey("LAPTOP_CLICKS"))
+            settingValueViews.get("LAPTOP_CLICKS").setText("LAPTOP CLICKS · " +
+                    (laptopClicksOn ? "ON" : "OFF"));
     }
 
     private void showFunctionPopup(View anchor) {
@@ -555,8 +582,17 @@ public class MainActivity extends Activity {
         card.setPadding(dp(8), dp(8), dp(8), dp(8));
         card.setBackground(neoBackground(BLUE));
 
+        bluetoothStateView = text(bluetoothInputStatus(), 13);
+        bluetoothStateView.setTypeface(Typeface.DEFAULT_BOLD);
+        bluetoothStateView.setTextColor(INK);
+        bluetoothStateView.setGravity(Gravity.CENTER);
+        bluetoothStateView.setBackground(rounded(bluetooth.isInputLive() ? GREEN : PAPER));
+        card.addView(bluetoothStateView, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(58)));
+
         Button visible = neoButton("MAKE PHONE VISIBLE", YELLOW);
         visible.setOnClickListener(v -> {
+            bluetoothModeButton.setChecked(true);
             Intent intent = new Intent(BluetoothAdapter.ACTION_REQUEST_DISCOVERABLE);
             intent.putExtra(BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION, 300);
             startActivity(intent);
@@ -574,23 +610,27 @@ public class MainActivity extends Activity {
         card.addView(pairedDevices);
         refreshBondedDevices();
 
-        PopupWindow popup = new PopupWindow(card, dp(320),
+        PopupWindow popup = new PopupWindow(card, dp(360),
                 LinearLayout.LayoutParams.WRAP_CONTENT, true);
         popup.setBackgroundDrawable(rounded(Color.TRANSPARENT));
         popup.setOutsideTouchable(true);
         popup.setElevation(dp(12));
-        popup.showAsDropDown(anchor, -dp(235), dp(4));
+        popup.setOnDismissListener(() -> {
+            pairedDevices = null;
+            bluetoothStateView = null;
+        });
+        popup.showAsDropDown(anchor, -dp(275), dp(4));
     }
 
     private void requestBluetoothPermission() {
         if (Build.VERSION.SDK_INT >= 31 &&
-                checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
+                !bluetooth.hasPermission()) {
             requestPermissions(new String[]{
                     Manifest.permission.BLUETOOTH_CONNECT,
                     Manifest.permission.BLUETOOTH_SCAN
             }, REQUEST_BT);
         } else {
-            bindHidProfile();
+            bluetooth.bind();
         }
     }
 
@@ -599,161 +639,49 @@ public class MainActivity extends Activity {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode == REQUEST_BT && grantResults.length > 0 &&
                 grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-            bindHidProfile();
+            bluetooth.bind();
         } else {
             updateStatus();
         }
-    }
-
-    private void bindHidProfile() {
-        if (destroyed || hidBinding || hid != null || adapter == null) {
-            updateStatus();
-            return;
-        }
-        hidBinding = true;
-        boolean requested = adapter.getProfileProxy(this, new BluetoothProfile.ServiceListener() {
-            @Override public void onServiceConnected(int profile, BluetoothProfile proxy) {
-                hidBinding = false;
-                hid = (BluetoothHidDevice) proxy;
-                registerHid();
-            }
-            @Override public void onServiceDisconnected(int profile) {
-                hidBinding = false;
-                hid = null;
-                hidRegistered = false;
-                hidHost = null;
-                Log.w("A05sInput", "Bluetooth HID profile disconnected");
-                updateStatus();
-                scheduleBluetoothReconnect();
-            }
-        }, BluetoothProfile.HID_DEVICE);
-        if (!requested) {
-            hidBinding = false;
-            Log.w("A05sInput", "Bluetooth HID profile bind was rejected");
-            scheduleBluetoothReconnect();
-        }
-    }
-
-    private void registerHid() {
-        if (hid == null) return;
-        BluetoothHidDeviceAppSdpSettings sdp = new BluetoothHidDeviceAppSdpSettings(
-                "A05s Input", "Offline keyboard and mouse", "Local", (byte) 0xC0, HID_DESCRIPTOR);
-        boolean requested = hid.registerApp(sdp, null, null, getMainExecutor(), new BluetoothHidDevice.Callback() {
-            @Override public void onAppStatusChanged(BluetoothDevice pluggedDevice, boolean registered) {
-                hidRegistered = registered;
-                Log.d("A05sInput", "Bluetooth HID app registered=" + registered);
-                if (pluggedDevice != null) {
-                    hidHost = pluggedDevice;
-                    rememberHost(pluggedDevice);
-                }
-                refreshBondedDevices();
-                updateStatus();
-                if (registered && mode == MODE_BLUETOOTH && hidHost == null) {
-                    connectPreferredHost();
-                }
-            }
-            @Override public void onConnectionStateChanged(BluetoothDevice device, int state) {
-                Log.d("A05sInput", "Bluetooth HID state=" + state + " host=" + safeName(device));
-                if (state == BluetoothProfile.STATE_CONNECTED) {
-                    hidHost = device;
-                    rememberHost(device);
-                    reconnectScheduled = false;
-                }
-                if (state == BluetoothProfile.STATE_DISCONNECTED && device.equals(hidHost)) {
-                    hidHost = null;
-                    scheduleBluetoothReconnect();
-                }
-                updateStatus();
-            }
-        });
-        if (!requested) Log.w("A05sInput", "Bluetooth HID app registration was rejected");
-    }
-
-    private void rememberHost(BluetoothDevice device) {
-        if (!hasBtPermission() || device == null) return;
-        getSharedPreferences("controls", MODE_PRIVATE).edit()
-                .putString("last_hid_host", device.getAddress()).apply();
-    }
-
-    private void connectPreferredHost() {
-        if (destroyed || mode != MODE_BLUETOOTH || !hasBtPermission() ||
-                adapter == null || hid == null || !hidRegistered || hidHost != null) return;
-        String address = getSharedPreferences("controls", MODE_PRIVATE)
-                .getString("last_hid_host", null);
-        if (address == null) return;
-        try {
-            BluetoothDevice preferred = adapter.getRemoteDevice(address);
-            Log.d("A05sInput", "Connecting preferred HID host " + safeName(preferred));
-            if (!hid.connect(preferred)) {
-                Log.w("A05sInput", "Bluetooth HID connect request was rejected");
-                scheduleBluetoothReconnect();
-            }
-        } catch (IllegalArgumentException e) {
-            Log.w("A05sInput", "Saved Bluetooth host address is invalid", e);
-        }
-    }
-
-    private void scheduleBluetoothReconnect() {
-        if (destroyed || mode != MODE_BLUETOOTH || reconnectScheduled) return;
-        reconnectScheduled = true;
-        uiHandler.postDelayed(() -> {
-            reconnectScheduled = false;
-            if (destroyed || mode != MODE_BLUETOOTH) return;
-            if (hid == null) bindHidProfile();
-            else connectPreferredHost();
-        }, 1200);
     }
 
     private void refreshBondedDevices() {
         runOnUiThread(() -> {
             if (pairedDevices == null) return;
             pairedDevices.removeAllViews();
-            if (!hasBtPermission() || adapter == null) return;
-            Set<BluetoothDevice> devices = adapter.getBondedDevices();
+            if (!bluetooth.hasPermission()) return;
+            Set<BluetoothDevice> devices = bluetooth.bondedDevices();
             for (BluetoothDevice device : devices) {
-                Button connect = button("Connect Bluetooth: " + device.getName());
+                boolean connected = bluetooth.isConnectedTo(device);
+                Button connect = neoButton((connected ? "INPUT CONNECTED ✓ · " :
+                        "CONNECT INPUT · ") + bluetooth.safeName(device), connected ? GREEN : PAPER);
                 connect.setOnClickListener(v -> {
-                    rememberHost(device);
-                    if (hid != null && hidRegistered && !hid.connect(device))
-                        Log.w("A05sInput", "Bluetooth HID connect request was rejected");
+                    if (connected) {
+                        Toast.makeText(this, "Keyboard and mouse input is live",
+                                Toast.LENGTH_SHORT).show();
+                    } else {
+                        Toast.makeText(this, "Connecting keyboard and mouse…",
+                                Toast.LENGTH_SHORT).show();
+                        bluetoothModeButton.setChecked(true);
+                        bluetooth.connect(device);
+                    }
                     updateStatus();
                 });
-                pairedDevices.addView(connect);
+                pairedDevices.addView(connect, new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT, dp(52)));
             }
+            updateBluetoothPanel();
         });
     }
 
-    private void startUsbServer() {
-        io.execute(() -> {
-            try {
-                usbServer = new ServerSocket(PORT, 4, InetAddress.getByName("127.0.0.1"));
-                updateStatus();
-                while (!usbServer.isClosed()) {
-                    UsbClient client = new UsbClient(usbServer.accept());
-                    if (client.write("HELLO A05S_INPUT 1")) {
-                        usbClients.add(client);
-                        io.execute(() -> readUsbClient(client));
-                    } else client.close();
-                    updateStatus();
-                }
-            } catch (IOException e) {
-                updateStatus();
-            }
-        });
+    private String bluetoothInputStatus() {
+        return bluetooth.detailedStatus();
     }
 
-    private void readUsbClient(UsbClient client) {
-        try {
-            String line;
-            while ((line = client.readLine()) != null) handleHostLine(line);
-        } catch (IOException e) {
-            Log.d("A05sInput", "Laptop battery link disconnected");
-        } finally {
-            usbClients.remove(client);
-            client.close();
-            pcStats = "LAPTOP BAT —";
-            updateStatus();
-        }
+    private void updateBluetoothPanel() {
+        if (bluetoothStateView == null) return;
+        bluetoothStateView.setText(bluetoothInputStatus());
+        bluetoothStateView.setBackground(rounded(bluetooth.isInputLive() ? GREEN : PAPER));
     }
 
     private void handleHostLine(String line) {
@@ -776,21 +704,7 @@ public class MainActivity extends Activity {
 
     private void broadcast(String line) {
         if (mode != MODE_USB) return;
-        usbWriter.execute(() -> sendToUsbClients(line));
-    }
-
-    private boolean sendToUsbClients(String line) {
-        boolean delivered = false;
-        for (UsbClient client : new ArrayList<>(usbClients)) {
-            if (client.write(line)) {
-                delivered = true;
-            } else {
-                usbClients.remove(client);
-                client.close();
-            }
-        }
-        updateStatus();
-        return delivered;
+        usb.send(line);
     }
 
     private void sendText(String value) {
@@ -879,41 +793,7 @@ public class MainActivity extends Activity {
     }
 
     private void sendBluetoothKey(int modifier, int usage) {
-        if (hid == null || hidHost == null) return;
-        BluetoothHidDevice targetHid = hid;
-        BluetoothDevice targetHost = hidHost;
-        byte[] modifiersDown = new byte[]{(byte) modifier, 0, 0, 0, 0, 0, 0, 0};
-        byte[] chordDown = new byte[]{(byte) modifier, 0, (byte) usage, 0, 0, 0, 0, 0};
-        byte[] allUp = new byte[8];
-        long start;
-        synchronized (this) {
-            start = Math.max(SystemClock.uptimeMillis(), nextHidKeyAt);
-            nextHidKeyAt = start + (modifier != 0 && usage != 0 ? 190 : 130);
-        }
-        Log.d("A05sInput", "BT key modifier=0x" + Integer.toHexString(modifier) +
-                " usage=0x" + Integer.toHexString(usage));
-        if (modifier != 0 && usage != 0) {
-            // Send a real four-stage chord. Some Windows Bluetooth stacks miss a
-            // modifier that first appears in the same report as the target key.
-            uiHandler.postAtTime(() -> sendHidReport(targetHid, targetHost, 1, modifiersDown), start);
-            uiHandler.postAtTime(() -> sendHidReport(targetHid, targetHost, 1, chordDown), start + 45);
-            uiHandler.postAtTime(() -> sendHidReport(targetHid, targetHost, 1, modifiersDown), start + 115);
-            uiHandler.postAtTime(() -> sendHidReport(targetHid, targetHost, 1, allUp), start + 160);
-        } else {
-            uiHandler.postAtTime(() -> sendHidReport(targetHid, targetHost, 1, chordDown), start);
-            uiHandler.postAtTime(() -> sendHidReport(targetHid, targetHost, 1, allUp), start + 85);
-        }
-    }
-
-    private void sendHidReport(BluetoothHidDevice targetHid, BluetoothDevice targetHost,
-                               int reportId, byte[] report) {
-        if (!targetHid.sendReport(targetHost, reportId, report)) {
-            Log.w("A05sInput", "Bluetooth rejected HID report " + reportId);
-            if (targetHost.equals(hidHost)) hidHost = null;
-            targetHid.disconnect(targetHost);
-            updateStatus();
-            scheduleBluetoothReconnect();
-        }
+        bluetooth.sendKey(modifier, usage);
     }
 
     private void sendSystemControl(String name, int consumerUsage) {
@@ -921,34 +801,24 @@ public class MainActivity extends Activity {
         // implementations interpret brightness usages inconsistently, and socket
         // writes must never block Android's UI thread.
         if (name.startsWith("BRIGHTNESS") || mode != MODE_BLUETOOTH) {
-            usbWriter.execute(() -> sendToUsbClients("MEDIA " + name));
+            usb.send("MEDIA " + name);
         } else {
             sendBluetoothConsumer(consumerUsage);
         }
     }
 
     private void sendBluetoothConsumer(int usage) {
-        if (hid == null || hidHost == null) return;
-        BluetoothHidDevice targetHid = hid;
-        BluetoothDevice targetHost = hidHost;
-        byte[] down = new byte[]{(byte) (usage & 0xFF), (byte) ((usage >> 8) & 0xFF)};
-        byte[] up = new byte[2];
-        long start;
-        synchronized (this) {
-            start = Math.max(SystemClock.uptimeMillis(), nextHidKeyAt);
-            nextHidKeyAt = start + 130;
-        }
-        Log.d("A05sInput", "BT consumer usage=0x" + Integer.toHexString(usage));
-        uiHandler.postAtTime(() -> sendHidReport(targetHid, targetHost, 3, down), start);
-        uiHandler.postAtTime(() -> sendHidReport(targetHid, targetHost, 3, up), start + 85);
+        bluetooth.sendConsumer(usage);
     }
 
-    private void move(int dx, int dy) {
+    @Override
+    public void move(int dx, int dy) {
         if (mode == MODE_USB) broadcast("MOVE " + dx + " " + dy);
         else if (mode == MODE_BLUETOOTH) sendBluetoothMouse(mouseButtons, dx, dy, 0);
     }
 
-    private void scroll(int amount) {
+    @Override
+    public void scroll(int amount) {
         if (mode == MODE_USB) broadcast("SCROLL " + amount);
         else if (mode == MODE_BLUETOOTH) sendBluetoothMouse(mouseButtons, 0, 0, amount);
     }
@@ -956,6 +826,49 @@ public class MainActivity extends Activity {
     private void click(String which) {
         setMouseButton(which, true);
         uiHandler.postDelayed(() -> setMouseButton(which, false), 38);
+    }
+
+    @Override
+    public void clickLeft() {
+        click("left");
+    }
+
+    @Override
+    public void setLeftButton(boolean down) {
+        setMouseButton("left", down);
+    }
+
+    @Override
+    public void threeFingerSwipe(TrackpadGestureListener.Swipe direction) {
+        String usbChord;
+        int modifier;
+        int usage;
+        switch (direction) {
+            case LEFT:
+                usbChord = "WIN+CTRL+LEFT";
+                modifier = 0x09;
+                usage = 0x50;
+                break;
+            case RIGHT:
+                usbChord = "WIN+CTRL+RIGHT";
+                modifier = 0x09;
+                usage = 0x4F;
+                break;
+            case UP:
+                usbChord = "WIN+TAB";
+                modifier = 0x08;
+                usage = 0x2B;
+                break;
+            default:
+                usbChord = "WIN+D";
+                modifier = 0x08;
+                usage = 0x07;
+                break;
+        }
+        if (mode == MODE_USB) broadcast("HOTKEY " + usbChord);
+        else if (mode == MODE_BLUETOOTH) bluetooth.sendKey(modifier, usage);
+        Toast.makeText(this, "3-finger " + direction.name().toLowerCase(),
+                Toast.LENGTH_SHORT).show();
     }
 
     private void setMouseButton(String which, boolean down) {
@@ -970,17 +883,7 @@ public class MainActivity extends Activity {
     }
 
     private void sendBluetoothMouse(int buttons, int dx, int dy, int wheel) {
-        if (hid == null || hidHost == null) return;
-        boolean emptyReport = dx == 0 && dy == 0 && wheel == 0;
-        while (dx != 0 || dy != 0 || wheel != 0) {
-            int x = clamp(dx), y = clamp(dy), w = clamp(wheel);
-            sendHidReport(hid, hidHost, 2,
-                    new byte[]{(byte) buttons, (byte) x, (byte) y, (byte) w});
-            dx -= x; dy -= y; wheel -= w;
-        }
-        if (emptyReport) {
-            sendHidReport(hid, hidHost, 2, new byte[]{(byte) buttons, 0, 0, 0});
-        }
+        bluetooth.sendMouse(buttons, dx, dy, wheel);
     }
 
     private void updateStatus() {
@@ -989,14 +892,12 @@ public class MainActivity extends Activity {
             String selected = mode == MODE_USB ? "USB" : mode == MODE_BLUETOOTH ? "BT" : "OFF";
             String connection;
             if (mode == MODE_USB) {
-                connection = usbServer == null ? "starting" :
-                        (usbClients.isEmpty() ? "waiting for PC" : "PC connected");
+                connection = !usb.isStarted() ? "starting" :
+                        (!usb.hasClients() ? "waiting for PC" : "PC connected");
             } else if (mode == MODE_BLUETOOTH) {
-                connection = hidHost == null ? (hidRegistered ? "ready to pair" : "starting")
-                        : safeName(hidHost);
-                if (connection.startsWith("DESKTOP-")) connection = connection.substring(8);
+                connection = bluetooth.shortStatus();
             } else {
-                connection = usbClients.isEmpty() ? "local" : "PC linked";
+                connection = !usb.hasClients() ? "local" : "PC linked";
             }
             String detail = pcStats;
             if (activeBluetoothModifier() != 0) {
@@ -1005,64 +906,15 @@ public class MainActivity extends Activity {
             }
             status.setText(selected + " · " + connection + "\n" + detail);
             if (systemStatsView != null) systemStatsView.setText(pcStats);
+            updateBluetoothPanel();
         });
-    }
-
-    private String safeName(BluetoothDevice device) {
-        if (!hasBtPermission()) return "paired host";
-        String name = device.getName();
-        return name == null ? device.getAddress() : name;
-    }
-
-    private boolean hasBtPermission() {
-        return Build.VERSION.SDK_INT < 31 ||
-                checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED;
     }
 
     @Override
     protected void onDestroy() {
-        destroyed = true;
         super.onDestroy();
-        if (hid != null && hidRegistered) hid.unregisterApp();
-        if (adapter != null && hid != null) adapter.closeProfileProxy(BluetoothProfile.HID_DEVICE, hid);
-        try { if (usbServer != null) usbServer.close(); } catch (IOException ignored) { }
-        for (UsbClient client : usbClients) client.close();
-        io.shutdownNow();
-        usbWriter.shutdownNow();
-    }
-
-    private static final class UsbClient {
-        private final Socket socket;
-        private final BufferedReader reader;
-        private final BufferedWriter writer;
-
-        UsbClient(Socket socket) throws IOException {
-            this.socket = socket;
-            this.reader = new BufferedReader(new InputStreamReader(
-                    socket.getInputStream(), StandardCharsets.UTF_8));
-            this.writer = new BufferedWriter(new OutputStreamWriter(
-                    socket.getOutputStream(), StandardCharsets.UTF_8));
-        }
-
-        String readLine() throws IOException {
-            return reader.readLine();
-        }
-
-        synchronized boolean write(String line) {
-            try {
-                writer.write(line);
-                writer.newLine();
-                writer.flush();
-                return true;
-            } catch (IOException e) {
-                Log.w("A05sInput", "USB client disconnected", e);
-                return false;
-            }
-        }
-
-        void close() {
-            try { socket.close(); } catch (IOException ignored) { }
-        }
+        bluetooth.destroy();
+        usb.close();
     }
 
     private LinearLayout keyboardRow() {
@@ -1166,15 +1018,7 @@ public class MainActivity extends Activity {
     }
 
     private RadioButton radio(String label, int id) {
-        RadioButton result = new RadioButton(this);
-        result.setText(label);
-        result.setId(id);
-        result.setTextSize(12);
-        result.setTextColor(INK);
-        result.setTypeface(Typeface.DEFAULT_BOLD);
-        result.setButtonTintList(ColorStateList.valueOf(INK));
-        result.setPadding(0, 0, dp(3), 0);
-        return result;
+        return neoUi.radio(label, id);
     }
 
     private Button button(String label) {
@@ -1182,45 +1026,11 @@ public class MainActivity extends Activity {
     }
 
     private Button neoButton(String label, int color) {
-        Button result = new Button(this);
-        result.setText(label);
-        result.setAllCaps(false);
-        result.setTextSize(12);
-        result.setTextColor(INK);
-        result.setTypeface(Typeface.DEFAULT_BOLD);
-        result.setGravity(Gravity.CENTER);
-        result.setSingleLine(!label.contains("\n"));
-        result.setLineSpacing(0, 0.82f);
-        result.setPadding(dp(5), 0, dp(5), dp(4));
-        result.setMinHeight(0);
-        result.setMinWidth(0);
-        result.setBackground(interactiveNeoBackground(color));
-        result.setOnTouchListener((view, event) -> {
-            if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
-                haptic(view, HapticFeedbackConstants.KEYBOARD_TAP);
-                view.animate().scaleX(0.965f).scaleY(0.965f).setDuration(55).start();
-            } else if (event.getActionMasked() == MotionEvent.ACTION_UP ||
-                    event.getActionMasked() == MotionEvent.ACTION_CANCEL) {
-                view.animate().scaleX(1f).scaleY(1f).setDuration(75).start();
-            }
-            return false;
-        });
-        result.setOnHoverListener((view, event) -> {
-            if (event.getActionMasked() == MotionEvent.ACTION_HOVER_ENTER) {
-                view.animate().scaleX(1.035f).scaleY(1.035f).setDuration(80).start();
-            } else if (event.getActionMasked() == MotionEvent.ACTION_HOVER_EXIT) {
-                view.animate().scaleX(1f).scaleY(1f).setDuration(80).start();
-            }
-            return false;
-        });
-        return result;
+        return neoUi.button(label, color);
     }
 
     private TextView text(String value, int sp) {
-        TextView result = new TextView(this);
-        result.setText(value);
-        result.setTextSize(sp);
-        return result;
+        return neoUi.text(value, sp);
     }
 
     private LinearLayout.LayoutParams weighted() {
@@ -1228,258 +1038,54 @@ public class MainActivity extends Activity {
     }
 
     private GradientDrawable rounded(int color) {
-        GradientDrawable shape = new GradientDrawable();
-        shape.setColor(color);
-        shape.setCornerRadius(dp(16));
-        if (color != Color.TRANSPARENT) shape.setStroke(dp(2), INK);
-        return shape;
+        return neoUi.rounded(color);
     }
 
     private LayerDrawable neoBackground(int color) {
-        GradientDrawable shadow = rounded(INK);
-        GradientDrawable face = rounded(color);
-        LayerDrawable layers = new LayerDrawable(new android.graphics.drawable.Drawable[]{shadow, face});
-        layers.setLayerInset(0, dp(5), dp(5), 0, 0);
-        layers.setLayerInset(1, 0, 0, dp(5), dp(5));
-        return layers;
-    }
-
-    private LayerDrawable neoPressedBackground(int color) {
-        GradientDrawable shadow = rounded(INK);
-        GradientDrawable face = rounded(color);
-        LayerDrawable layers = new LayerDrawable(new android.graphics.drawable.Drawable[]{shadow, face});
-        layers.setLayerInset(0, dp(5), dp(5), 0, 0);
-        layers.setLayerInset(1, dp(4), dp(4), dp(1), dp(1));
-        return layers;
-    }
-
-    private LayerDrawable neoHoverBackground(int color) {
-        GradientDrawable shadow = rounded(INK);
-        GradientDrawable face = rounded(color);
-        face.setStroke(dp(3), INK);
-        LayerDrawable layers = new LayerDrawable(new android.graphics.drawable.Drawable[]{shadow, face});
-        layers.setLayerInset(0, dp(7), dp(7), 0, 0);
-        layers.setLayerInset(1, 0, 0, dp(7), dp(7));
-        return layers;
+        return neoUi.background(color);
     }
 
     private StateListDrawable interactiveNeoBackground(int color) {
-        StateListDrawable states = new StateListDrawable();
-        states.addState(new int[]{android.R.attr.state_pressed}, neoPressedBackground(color));
-        states.addState(new int[]{android.R.attr.state_hovered}, neoHoverBackground(color));
-        states.addState(new int[]{android.R.attr.state_focused}, neoHoverBackground(color));
-        states.addState(new int[]{}, neoBackground(color));
-        return states;
+        return neoUi.interactiveBackground(color);
     }
 
-    private int dp(int value) {
-        return Math.round(value * getResources().getDisplayMetrics().density);
+    @Override
+    public int dp(int value) {
+        return neoUi.dp(value);
     }
 
-    private void haptic(View view, int feedback) {
-        if (hapticsOn) view.performHapticFeedback(feedback);
+    @Override
+    public int dragHoldMs() {
+        return dragHoldMs;
     }
 
-    private static int clamp(int value) {
-        return Math.max(-127, Math.min(127, value));
+    @Override
+    public int pointerPercent() {
+        return pointerPercent;
     }
 
-    private static byte[] hex(String value) {
-        byte[] out = new byte[value.length() / 2];
-        for (int i = 0; i < out.length; i++) {
-            out[i] = (byte) Integer.parseInt(value.substring(i * 2, i * 2 + 2), 16);
-        }
-        return out;
+    @Override
+    public int scrollPercent() {
+        return scrollPercent;
     }
 
-    private final class TrackpadListener implements View.OnTouchListener {
-        private float lastX, lastY;
-        private float lastTapX, lastTapY;
-        private long downAt;
-        private long lastTapAt;
-        private float travel;
-        private boolean fingerDown;
-        private boolean dragging;
-        private boolean twoFinger;
-        private View activeView;
-        private final Runnable longPress = () -> {
-            if (fingerDown && !twoFinger && travel < dp(12) && activeView != null) {
-                beginDrag(activeView);
-            }
-        };
-
-        private void beginDrag(View view) {
-            if (dragging) return;
-            dragging = true;
-            uiHandler.removeCallbacks(longPress);
-            setMouseButton("left", true);
-            haptic(view, HapticFeedbackConstants.LONG_PRESS);
-            view.setBackground(rounded(Color.rgb(72, 72, 72)));
-        }
-
-        private void finishGesture(View view) {
-            uiHandler.removeCallbacks(longPress);
-            fingerDown = false;
-            if (dragging) setMouseButton("left", false);
-            dragging = false;
-            twoFinger = false;
-            view.animate().scaleX(1f).scaleY(1f).setDuration(75).start();
-            view.setBackground(rounded(INK));
-        }
-
-        @Override public boolean onTouch(View view, MotionEvent event) {
-            float x = 0, y = 0;
-            for (int i = 0; i < event.getPointerCount(); i++) {
-                x += event.getX(i); y += event.getY(i);
-            }
-            x /= event.getPointerCount(); y /= event.getPointerCount();
-            switch (event.getActionMasked()) {
-                case MotionEvent.ACTION_DOWN:
-                    haptic(view, HapticFeedbackConstants.VIRTUAL_KEY);
-                    view.animate().scaleX(0.992f).scaleY(0.992f).setDuration(55).start();
-                    view.setBackground(rounded(Color.rgb(45, 45, 45)));
-                    long now = SystemClock.uptimeMillis();
-                    fingerDown = true;
-                    dragging = false;
-                    twoFinger = false;
-                    activeView = view;
-                    lastX = x; lastY = y; travel = 0; downAt = now;
-                    if (now - lastTapAt < 330 &&
-                            Math.abs(x - lastTapX) + Math.abs(y - lastTapY) < dp(64)) {
-                        lastTapAt = 0;
-                        beginDrag(view);
-                    } else {
-                        uiHandler.postDelayed(longPress, dragHoldMs);
-                    }
-                    return true;
-                case MotionEvent.ACTION_POINTER_DOWN:
-                    twoFinger = true;
-                    uiHandler.removeCallbacks(longPress);
-                    if (dragging) {
-                        setMouseButton("left", false);
-                        dragging = false;
-                    }
-                    lastX = x; lastY = y;
-                    return true;
-                case MotionEvent.ACTION_MOVE:
-                    int rawDx = Math.round(x - lastX);
-                    int rawDy = Math.round(y - lastY);
-                    int dx = Math.round(rawDx * pointerPercent / 100f);
-                    int dy = Math.round(rawDy * pointerPercent / 100f);
-                    travel += Math.abs(rawDx) + Math.abs(rawDy);
-                    if (!dragging && travel >= dp(12)) uiHandler.removeCallbacks(longPress);
-                    if (event.getPointerCount() >= 2)
-                        scroll(clamp(Math.round(-rawDy * scrollPercent / 300f)));
-                    else move(dx, dy);
-                    lastX = x; lastY = y;
-                    return true;
-                case MotionEvent.ACTION_UP:
-                    boolean wasDragging = dragging;
-                    boolean wasTwoFinger = twoFinger;
-                    finishGesture(view);
-                    long releasedAt = SystemClock.uptimeMillis();
-                    if (!wasDragging && !wasTwoFinger && travel < dp(12) && releasedAt - downAt < 350) {
-                        click("left");
-                        lastTapAt = releasedAt;
-                        lastTapX = x;
-                        lastTapY = y;
-                    }
-                    return true;
-                case MotionEvent.ACTION_CANCEL:
-                    finishGesture(view);
-                    return true;
-                default:
-                    return true;
-            }
-        }
+    @Override
+    public void haptic(View view, int feedback) {
+        this.feedback.perform(view, feedback);
     }
 
-    private final class ScrollPadListener implements View.OnTouchListener {
-        private float lastY;
-        private float remainder;
-
-        @Override public boolean onTouch(View view, MotionEvent event) {
-            switch (event.getActionMasked()) {
-                case MotionEvent.ACTION_DOWN:
-                    lastY = event.getY();
-                    remainder = 0;
-                    haptic(view, HapticFeedbackConstants.VIRTUAL_KEY);
-                    view.animate().scaleX(0.965f).scaleY(0.985f).setDuration(55).start();
-                    view.setBackground(rounded(Color.rgb(104, 157, 222)));
-                    return true;
-                case MotionEvent.ACTION_MOVE:
-                    remainder += event.getY() - lastY;
-                    lastY = event.getY();
-                    int stepSize = dp(Math.max(4, 1000 / scrollPercent));
-                    int steps = (int) (remainder / stepSize);
-                    if (steps != 0) {
-                        scroll(clamp(-steps));
-                        remainder -= steps * stepSize;
-                        haptic(view, HapticFeedbackConstants.CLOCK_TICK);
-                    }
-                    return true;
-                case MotionEvent.ACTION_UP:
-                case MotionEvent.ACTION_CANCEL:
-                    view.animate().scaleX(1f).scaleY(1f).setDuration(75).start();
-                    view.setBackground(rounded(BLUE));
-                    return true;
-                default:
-                    return true;
-            }
-        }
+    @Override
+    public void trackpadVisual(View view, int state) {
+        int color = state == TrackpadGestureListener.VISUAL_DRAGGING
+                ? Color.rgb(72, 72, 72)
+                : state == TrackpadGestureListener.VISUAL_PRESSED
+                ? Color.rgb(45, 45, 45) : INK;
+        view.setBackground(rounded(color));
     }
 
-    private static final class KeyStroke {
-        final int modifier;
-        final int usage;
-
-        KeyStroke(int modifier, int usage) {
-            this.modifier = modifier;
-            this.usage = usage;
-        }
-
-        static KeyStroke forChar(char c) {
-            if (c >= 'a' && c <= 'z') return new KeyStroke(0, 0x04 + c - 'a');
-            if (c >= 'A' && c <= 'Z') return new KeyStroke(0x02, 0x04 + c - 'A');
-            if (c >= '1' && c <= '9') return new KeyStroke(0, 0x1E + c - '1');
-            if (c == '0') return new KeyStroke(0, 0x27);
-            switch (c) {
-                case '\n': return new KeyStroke(0, 0x28);
-                case '\t': return new KeyStroke(0, 0x2B);
-                case ' ': return new KeyStroke(0, 0x2C);
-                case '-': return new KeyStroke(0, 0x2D);
-                case '_': return new KeyStroke(0x02, 0x2D);
-                case '=': return new KeyStroke(0, 0x2E);
-                case '+': return new KeyStroke(0x02, 0x2E);
-                case '[': return new KeyStroke(0, 0x2F);
-                case '{': return new KeyStroke(0x02, 0x2F);
-                case ']': return new KeyStroke(0, 0x30);
-                case '}': return new KeyStroke(0x02, 0x30);
-                case '\\': return new KeyStroke(0, 0x31);
-                case ';': return new KeyStroke(0, 0x33);
-                case ':': return new KeyStroke(0x02, 0x33);
-                case '\'': return new KeyStroke(0, 0x34);
-                case '"': return new KeyStroke(0x02, 0x34);
-                case '`': return new KeyStroke(0, 0x35);
-                case '~': return new KeyStroke(0x02, 0x35);
-                case ',': return new KeyStroke(0, 0x36);
-                case '<': return new KeyStroke(0x02, 0x36);
-                case '.': return new KeyStroke(0, 0x37);
-                case '>': return new KeyStroke(0x02, 0x37);
-                case '/': return new KeyStroke(0, 0x38);
-                case '?': return new KeyStroke(0x02, 0x38);
-                case '!': return new KeyStroke(0x02, 0x1E);
-                case '@': return new KeyStroke(0x02, 0x1F);
-                case '#': return new KeyStroke(0x02, 0x20);
-                case '$': return new KeyStroke(0x02, 0x21);
-                case '%': return new KeyStroke(0x02, 0x22);
-                case '^': return new KeyStroke(0x02, 0x23);
-                case '&': return new KeyStroke(0x02, 0x24);
-                case '*': return new KeyStroke(0x02, 0x25);
-                case '(': return new KeyStroke(0x02, 0x26);
-                case ')': return new KeyStroke(0x02, 0x27);
-                default: return null;
-            }
-        }
+    @Override
+    public void scrollVisual(View view, boolean pressed) {
+        view.setBackground(rounded(pressed ? Color.rgb(104, 157, 222) : BLUE));
     }
+
 }

@@ -12,6 +12,7 @@ import subprocess
 import sys
 import threading
 import time
+import winsound
 from pathlib import Path
 
 PORT = 27183
@@ -26,6 +27,7 @@ MOUSEEVENTF_WHEEL = 0x0800
 KEYEVENTF_KEYUP = 0x0002
 KEYEVENTF_UNICODE = 0x0004
 INPUT_KEYBOARD = 1
+CLICK_SOUND = Path(r"C:\Windows\Media\Windows Navigation Start.wav")
 
 VK = {
     "BACKSPACE": 0x08, "TAB": 0x09, "ENTER": 0x0D, "ESC": 0x1B,
@@ -151,7 +153,12 @@ def handle(line: str, dry_run: bool) -> None:
         print(f"received: {line.strip()}")
         return
     command = parts[0]
-    if command == "MOVE" and len(parts) == 3:
+    if command == "SOUND" and len(parts) == 2:
+        if CLICK_SOUND.exists():
+            winsound.PlaySound(str(CLICK_SOUND), winsound.SND_FILENAME | winsound.SND_ASYNC)
+        else:
+            winsound.MessageBeep(winsound.MB_OK)
+    elif command == "MOVE" and len(parts) == 3:
         user32.mouse_event(MOUSEEVENTF_MOVE, int(parts[1]), int(parts[2]), 0, 0)
     elif command == "SCROLL" and len(parts) == 2:
         user32.mouse_event(MOUSEEVENTF_WHEEL, 0, 0, int(parts[1]) * 120, 0)
