@@ -1,7 +1,7 @@
 # GlassHID
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/MVMC4/GlassHID/main/docs/images/project-banner.png" alt="GlassHID — your phone is the peripheral" width="100%">
+  <img src="https://raw.githubusercontent.com/MooketsiMagwaza/GlassHID/main/docs/images/project-banner.png" alt="GlassHID — your phone is the peripheral" width="100%">
 </p>
 
 A completely local keyboard, mouse, and gamepad for Android. The phone does not
@@ -55,30 +55,30 @@ trackpad card's dock button moves it between the left and right edges.
 ## App tour
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/MVMC4/GlassHID/main/docs/images/keyboard.png" alt="Full GlassHID keyboard" width="100%">
+  <img src="https://raw.githubusercontent.com/MooketsiMagwaza/GlassHID/main/docs/images/keyboard.png" alt="Full GlassHID keyboard" width="100%">
 </p>
 
 | Wide trackpad and scroll strip | Compact tools drawer |
 | --- | --- |
-| <img src="https://raw.githubusercontent.com/MVMC4/GlassHID/main/docs/images/trackpad.png" alt="GlassHID trackpad" width="100%"> | <img src="https://raw.githubusercontent.com/MVMC4/GlassHID/main/docs/images/tools-drawer.png" alt="GlassHID tools drawer" width="100%"> |
+| <img src="https://raw.githubusercontent.com/MooketsiMagwaza/GlassHID/main/docs/images/trackpad.png" alt="GlassHID trackpad" width="100%"> | <img src="https://raw.githubusercontent.com/MooketsiMagwaza/GlassHID/main/docs/images/tools-drawer.png" alt="GlassHID tools drawer" width="100%"> |
 
 | Function and navigation keys | Volume, brightness, and laptop battery |
 | --- | --- |
-| <img src="https://raw.githubusercontent.com/MVMC4/GlassHID/main/docs/images/function-keys.png" alt="Function key drawer" width="100%"> | <img src="https://raw.githubusercontent.com/MVMC4/GlassHID/main/docs/images/system-controls.png" alt="System controls" width="100%"> |
+| <img src="https://raw.githubusercontent.com/MooketsiMagwaza/GlassHID/main/docs/images/function-keys.png" alt="Function key drawer" width="100%"> | <img src="https://raw.githubusercontent.com/MooketsiMagwaza/GlassHID/main/docs/images/system-controls.png" alt="System controls" width="100%"> |
 
 | Input tuning | Controller settings |
 | --- | --- |
-| <img src="https://raw.githubusercontent.com/MVMC4/GlassHID/main/docs/images/settings.png" alt="GlassHID input settings" width="100%"> | <img src="https://raw.githubusercontent.com/MVMC4/GlassHID/main/docs/images/settings-controller.png" alt="GlassHID controller settings" width="100%"> |
+| <img src="https://raw.githubusercontent.com/MooketsiMagwaza/GlassHID/main/docs/images/settings.png" alt="GlassHID input settings" width="100%"> | <img src="https://raw.githubusercontent.com/MooketsiMagwaza/GlassHID/main/docs/images/settings-controller.png" alt="GlassHID controller settings" width="100%"> |
 
 ## Controller layouts
 
 | PlayStation symbols | Xbox-style ABXY | HID numbers 1–4 |
 | --- | --- | --- |
-| <img src="https://raw.githubusercontent.com/MVMC4/GlassHID/main/docs/images/controller-default.png" alt="PlayStation controller labels" width="100%"> | <img src="https://raw.githubusercontent.com/MVMC4/GlassHID/main/docs/images/controller-abxy.png" alt="Xbox-style controller labels" width="100%"> | <img src="https://raw.githubusercontent.com/MVMC4/GlassHID/main/docs/images/controller-1234.png" alt="Numbered controller labels" width="100%"> |
+| <img src="https://raw.githubusercontent.com/MooketsiMagwaza/GlassHID/main/docs/images/controller-default.png" alt="PlayStation controller labels" width="100%"> | <img src="https://raw.githubusercontent.com/MooketsiMagwaza/GlassHID/main/docs/images/controller-abxy.png" alt="Xbox-style controller labels" width="100%"> | <img src="https://raw.githubusercontent.com/MooketsiMagwaza/GlassHID/main/docs/images/controller-1234.png" alt="Numbered controller labels" width="100%"> |
 
 | Live stick position | Active diagonal cross | Swapped pad/sticks |
 | --- | --- | --- |
-| <img src="https://raw.githubusercontent.com/MVMC4/GlassHID/main/docs/images/controller-input-live.png" alt="Left stick moving visibly" width="100%"> | <img src="https://raw.githubusercontent.com/MVMC4/GlassHID/main/docs/images/controller-dpad-active.png" alt="D-pad diagonal arms highlighted" width="100%"> | <img src="https://raw.githubusercontent.com/MVMC4/GlassHID/main/docs/images/controller-swapped.png" alt="Swapped controller layout" width="100%"> |
+| <img src="https://raw.githubusercontent.com/MooketsiMagwaza/GlassHID/main/docs/images/controller-input-live.png" alt="Left stick moving visibly" width="100%"> | <img src="https://raw.githubusercontent.com/MooketsiMagwaza/GlassHID/main/docs/images/controller-dpad-active.png" alt="D-pad diagonal arms highlighted" width="100%"> | <img src="https://raw.githubusercontent.com/MooketsiMagwaza/GlassHID/main/docs/images/controller-swapped.png" alt="Swapped controller layout" width="100%"> |
 
 Having trouble with Steam? Follow the [Steam Input setup and exact button map](docs/steam-input.md).
 
@@ -157,7 +157,7 @@ scroll strip are separate components; `MainActivity` coordinates the screen.
 
 ## Contributing
 
-<img src="https://raw.githubusercontent.com/MVMC4/GlassHID/main/docs/images/contributions-welcome.png" alt="Contributions welcome" width="100%">
+<img src="https://raw.githubusercontent.com/MooketsiMagwaza/GlassHID/main/docs/images/contributions-welcome.png" alt="Contributions welcome" width="100%">
 
 Bug fixes, device reports, layouts, accessibility work, documentation, and
 translations are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening
